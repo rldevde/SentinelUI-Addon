@@ -549,13 +549,16 @@ end
 -- guids identifies which server layer you are standing on
 -- ---------------------------------------------------------------------------
 function IT:CheckLayer(guid)
-	if self.inInstance then return end
+	-- live check: the inInstance timestamp flag can stay stale after odd
+	-- zoning paths and would silence detection for the rest of the session
+	if IsInInstance and select(1, IsInInstance()) then return end
 	local npcID, zoneID, utype, instID = NpcIDFromGUID(guid)
 	if not zoneID or zoneID == 0 or not npcID then return end
 	if utype ~= "Creature" then return end
-	-- the layer/shard lives in the guid's instance field; fall back to the zone
-	-- id on non-layered servers (shard = 0) so the display still works
-	zoneID = (instID and instID ~= 0) and instID or zoneID
+	-- combined shard key: whichever guid field carries the layer on this
+	-- client (instance vs zone varies), two players on different shards must
+	-- produce a different key and the same shard an identical one
+	zoneID = format("%d:%d", instID or 0, zoneID)
 	if D.companions and D.companions[npcID] then return end
 	if D.critters and D.critters[npcID] then return end
 	local data = self:Data()

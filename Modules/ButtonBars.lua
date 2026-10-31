@@ -611,17 +611,21 @@ function BB:Rescan()
 			end
 		end
 	end
+	-- explicitly registered SUI buttons (GuildHub Call to Arms): collected even
+	-- when collectSUI is off and regardless of creation timing — done first so
+	-- an error inside a foreign addon's button scan cannot skip it
+	for _, n in ipairs({ "SentinelUIMinimapButton_cta" }) do
+		local b = _G[n]
+		if b and b:GetParent() == Minimap then
+			pcall(self.GrabButton, self, b, n)
+		end
+	end
 	local n = #self.buttons
 	self:ScanMinimap()
 	self:GrabBlizzard()
 	self:ScanLDB()
 	self:CustomGrab()
-	-- explicitly registered SUI buttons (GuildHub Call to Arms): collected even
-	-- when collectSUI is off and regardless of creation timing
-	for _, n in ipairs({ "SentinelUIMinimapButton_cta" }) do
-		local b = _G[n]
-		if b and b:GetParent() == Minimap then self:GrabButton(b, n) end
-	end
+
 	-- drop created LDB stand-ins once the addon's real button got collected
 	local seen = {}
 	for i = #self.buttons, 1, -1 do

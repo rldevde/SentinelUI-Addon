@@ -558,6 +558,9 @@ DT:Register("Layer", {
 	events = { "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "NAME_PLATE_UNIT_ADDED", "GROUP_JOINED", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" },
 	update = function(slot)
 		local it = S:GetModule("InstanceTracker", true)
+		if it and it.ParseGUID and not (it.CurrentLayer and it:CurrentLayer()) then
+			it:ParseGUID(UnitGUID and (UnitGUID("target") or UnitGUID("mouseover")))
+		end
 		local num = it and it.CurrentLayer and it:CurrentLayer()
 		if num and num > 0 then
 			slot.text:SetText(Label(L["Layer"]) .. Value(tostring(num)))
