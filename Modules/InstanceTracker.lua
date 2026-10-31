@@ -506,9 +506,9 @@ end
 local function NpcIDFromGUID(guid)
 	if not guid or type(guid) ~= "string" then return end
 	-- Creature-0-server-instance-zoneID-npcID-spawnUID
-	local utype, _, _, _, zoneID, npcID = guid:match("([^-]+)-([^-]+)-([^-]+)-([^-]+)-([^-]+)-([^-]+)")
+	local utype, _, _, instID, zoneID, npcID = guid:match("([^-]+)-([^-]+)-([^-]+)-([^-]+)-([^-]+)-([^-]+)")
 	if utype == "Creature" or utype == "Cast" or utype == "Vehicle" then
-		return tonumber(npcID), tonumber(zoneID), utype
+		return tonumber(npcID), tonumber(zoneID), utype, tonumber(instID)
 	end
 end
 
@@ -550,9 +550,12 @@ end
 -- ---------------------------------------------------------------------------
 function IT:CheckLayer(guid)
 	if self.inInstance then return end
-	local npcID, zoneID, utype = NpcIDFromGUID(guid)
+	local npcID, zoneID, utype, instID = NpcIDFromGUID(guid)
 	if not zoneID or zoneID == 0 or not npcID then return end
 	if utype ~= "Creature" then return end
+	-- the layer/shard lives in the guid's instance field; fall back to the zone
+	-- id on non-layered servers (shard = 0) so the display still works
+	zoneID = (instID and instID ~= 0) and instID or zoneID
 	if D.companions and D.companions[npcID] then return end
 	if D.critters and D.critters[npcID] then return end
 	local data = self:Data()
