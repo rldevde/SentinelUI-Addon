@@ -7,6 +7,12 @@ Note on versions: `## Version` is SentinelUI's own release number. The embedded
 BetterItem module reports `## X-BetterItem-Version` and must always equal the
 standalone RLBetterItem release.
 
+## [1.4.9]
+
+### Fixed
+- **RaidGrid click-casts hit the player's target instead of the cell** — the rez/hybrid macros evaluated `[dead]`/`[help]` conditions against the current target; they now use explicit `[@unit]` tokens, so healing via the grid works regardless of who is targeted (also fixed in the `/stopmacro` line of menu bindings)
+- **Shapeshift classes stayed in form when healing via the grid** — `/cast` inside a macro does not unshift automatically; the hybrid macros now start with `/cancelform` for Druids, Priests (Shadowform) and Shamans (Ghost Wolf)
+
 ## [1.4.8] - 2026-10-28
 
 ### Added
