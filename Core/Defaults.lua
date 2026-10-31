@@ -776,6 +776,7 @@ S.defaults = {
 			addonList = true, help = true, timemanager = true, calendar = true, encounterjournal = true,
 			addons = true, bossMod = true, meter = true,
 		},
+		talentatlas = { },
 	},
 }
 
