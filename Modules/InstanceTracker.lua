@@ -523,6 +523,7 @@ end
 
 -- same-instance merge via zone id from npc guids
 function IT:ParseGUID(guid)
+	if not self.db then return end
 	self:CheckLayer(guid)
 	if not self.db.detectSameInstance then return end
 	local r = self:Current()

@@ -1,8 +1,10 @@
 -- TalentAtlas: class/race/talent guide browser, ported from the standalone
 -- TalentAtlas addon into the SentinelUI module pattern.
-local TA = S:NewModule("TalentAtlas", "talentatlas")
+local _, ns = ...
+local S = ns.S
 local L = S.L
-local ns = {}
+local TA = S:NewModule("TalentAtlas", "talentatlas")
+local D = {}
 TA.frame = CreateFrame("Frame")
 
 
@@ -14,7 +16,7 @@ local LEGION = 7
 local BATTLE_FOR_AZEROTH = 8
 local DRAGONFLIGHT = 10
 
-ns.Expansions = {
+D.Expansions = {
 	[1] = "Classic",
 	[2] = "The Burning Crusade",
 	[3] = "Wrath of the Lich King",
@@ -29,7 +31,7 @@ ns.Expansions = {
 	[12] = "Midnight",
 }
 
-ns.Classes = {
+D.Classes = {
 	{ key = "druid", name = "Druid", roles = "Tank, Healer, Melee DPS, Ranged DPS", trees = "Balance, Feral, Restoration", specs = "Balance, Feral, Guardian, Restoration", armor = "Leather", resources = "Mana, Energy, Rage, Astral Power", overview = "Shapeshifter with flexible melee, ranged, tanking and healing playstyles.", since = CLASSIC },
 	{ key = "hunter", name = "Hunter", roles = "Ranged DPS, Melee DPS", trees = "Beast Mastery, Marksmanship, Survival", specs = "Beast Mastery, Marksmanship, Survival", armor = "Mail", resources = "Focus", overview = "Weapon specialist who fights at range or in melee and often works with an animal companion.", since = CLASSIC },
 	{ key = "mage", name = "Mage", roles = "Ranged DPS", trees = "Arcane, Fire, Frost", specs = "Arcane, Fire, Frost", armor = "Cloth", resources = "Mana", overview = "Ranged spellcaster focused on elemental damage, crowd control and mobility.", since = CLASSIC },
@@ -45,7 +47,7 @@ ns.Classes = {
 	{ key = "evoker", name = "Evoker", roles = "Ranged DPS, Healer, Support", specs = "Devastation, Preservation, Augmentation", armor = "Mail", resources = "Mana, Essence", overview = "Dracthyr spellcaster with empowered abilities, mid-range magic, healing and support.", since = DRAGONFLIGHT },
 }
 
-ns.Races = {
+D.Races = {
 	{ key = "human", name = "Human", faction = "Alliance", since = CLASSIC, traits = "Diplomacy, Will to Survive" },
 	{ key = "dwarf", name = "Dwarf", faction = "Alliance", since = CLASSIC, traits = "Stoneform, Explorer" },
 	{ key = "nightelf", name = "Night Elf", faction = "Alliance", since = CLASSIC, traits = "Shadowmeld, Quickness" },
@@ -74,7 +76,7 @@ ns.Races = {
 	{ key = "vulpera", name = "Vulpera", faction = "Horde", since = BATTLE_FOR_AZEROTH, traits = "Make Camp, Nose For Trouble" },
 }
 
-ns.Builds = {
+D.Builds = {
 	-- Add reviewed recommendations here; each record must target one exact patch.
 	-- { expansion = 12, patch = "12.0.5", class = "mage", spec = "Arcane",
 	--   content = "Raid", title = "Single target", summary = "...",
@@ -357,7 +359,7 @@ local function DrawModernTalents(parent, colors, L)
 	return contentHeight > 0 and contentHeight or false
 end
 
-function ns.DrawCurrentTalents(parent, colors, L)
+function D.DrawCurrentTalents(parent, colors, L)
 	local height = DrawModernTalents(parent, colors, L)
 	if height == nil then height = DrawClassicTalents(parent, colors, L) end
 	return height
@@ -503,7 +505,7 @@ local function Matches(entry, needle)
 		TranslateList(entry.trees),
 		L[entry.faction or ""],
 		TranslateList(entry.traits),
-		L[ns.Expansions[entry.since] or ""],
+		L[D.Expansions[entry.since] or ""],
 	}, " "):lower()
 	return haystack:find(needle, 1, true) ~= nil
 end
@@ -538,7 +540,7 @@ local function AddCard(entry, index, kind)
 	if kind == "class" then
 		caption = L["Roles"] .. ": " .. TranslateList(entry.roles)
 	else
-		caption = L["Faction"] .. ": " .. L[entry.faction] .. "  |  " .. L["Available since"] .. ": " .. L[ns.Expansions[entry.since] or "?"]
+		caption = L["Faction"] .. ": " .. L[entry.faction] .. "  |  " .. L["Available since"] .. ": " .. L[D.Expansions[entry.since] or "?"]
 	end
 	local sub = MakeLabel(card, caption, 11, GOLD)
 	sub:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -6)
@@ -606,7 +608,7 @@ local function RenderOverview()
 	)
 	AddInfoPanel(
 		L["Detected client"],
-		("%s / %s / %s %s"):format(client, L["Version"], interface, L[ns.Expansions[expansion] or ""]),
+		("%s / %s / %s %s"):format(client, L["Version"], interface, L[D.Expansions[expansion] or ""]),
 		2
 	)
 	AddInfoPanel(
@@ -624,7 +626,7 @@ end
 
 local function RenderEntries(kind)
 	local expansion = GetClientInfo()
-	local source = kind == "class" and ns.Classes or ns.Races
+	local source = kind == "class" and D.Classes or D.Races
 	local shown = 0
 
 	for _, entry in ipairs(source) do
@@ -644,7 +646,7 @@ end
 local function RenderBuilds()
 	local expansion, client = GetClientInfo()
 	local shown = 0
-	for _, build in ipairs(ns.Builds) do
+	for _, build in ipairs(D.Builds) do
 		if build.expansion == expansion then
 			shown = shown + 1
 			local title = table.concat({ build.class or "", build.spec or "", build.content or "" }, " / ")
@@ -661,7 +663,7 @@ local function RenderBuilds()
 	if shown == 0 then
 		local text = L["No reviewed builds are bundled yet."] .. "\n\n"
 			.. L["Builds must be reviewed for each game version and patch before being recommended."] .. "\n\n"
-			.. L["Detected client"] .. ": " .. client .. " / " .. L[ns.Expansions[expansion] or ""]
+			.. L["Detected client"] .. ": " .. client .. " / " .. L[D.Expansions[expansion] or ""]
 		AddInfoPanel(L["Build guide"], text, 1)
 		AddInfoPanel(
 			L["Guide inspiration"],
@@ -674,7 +676,7 @@ local function RenderBuilds()
 end
 
 local function RenderTalents()
-	local height = ns.DrawCurrentTalents(scrollChild, GOLD, L)
+	local height = D.DrawCurrentTalents(scrollChild, GOLD, L)
 	if height == nil then
 		AddInfoPanel(L["Talents"], L["Talent APIs are not available on this client."], 1)
 		scrollChild:SetHeight(136)
@@ -693,7 +695,7 @@ local function RenderDetails()
 		local profileLabel, profiles = GetClassProfile(entry)
 		local classInfo = L["Roles"] .. ": " .. TranslateList(entry.roles) .. "\n"
 			.. profileLabel .. ": " .. profiles .. "\n"
-			.. L["Available since"] .. ": " .. L[ns.Expansions[entry.since] or ""]
+			.. L["Available since"] .. ": " .. L[D.Expansions[entry.since] or ""]
 		local combatInfo = L["Armor type"] .. ": " .. L[entry.armor or "Unknown"] .. "\n"
 			.. L["Primary resources (modern; vary by version)"] .. ": " .. TranslateList(entry.resources) .. "\n"
 			.. L["Resource and armor details can change between expansions."]
@@ -720,7 +722,7 @@ local function RenderDetails()
 	else
 		local line = L["Faction"] .. ": " .. L[entry.faction] .. "\n"
 			.. L["Racial traits"] .. ": " .. TranslateList(entry.traits) .. "\n"
-			.. L["Available since"] .. ": " .. L[ns.Expansions[entry.since] or ""] .. "\n"
+			.. L["Available since"] .. ": " .. L[D.Expansions[entry.since] or ""] .. "\n"
 			.. L["Race note"]
 		AddInfoPanel(L[entry.name], line, 1)
 		AddInfoPanel(L["Details"], L["Race details and class availability depend on the selected game version."], 2)
