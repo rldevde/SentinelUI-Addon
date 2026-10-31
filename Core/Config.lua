@@ -1029,7 +1029,7 @@ function S:BuildOptions()
 		{ "rep", L["Reputation"] }, { "itemsync", L["Item Sync"] }, { "bugfolder", L["BugFolder"] }, { "messenger", L["Messenger"] }, { "seelast", L["SeeLast"] },
 		{ "buttonbars", L["Button Bars"] }, { "announcer", L["Announcer"] }, { "magebar", L["Mage Bar"] }, { "navigation", L["Navigation"] }, { "damagemeter", L["Damage Meter"] },
 		{ "worldmap", L["World Map"] }, { "instancetracker", L["Instance Tracker"] }, { "worldbuffs", L["World Buffs"] },
-		{ L["Guild Chronicle"] },
+		{ "guildhub", L["Guild Chronicle"] },
 		{ "interruptalert", L["Interrupt Alert"] }, { "healerprot", L["Healer Protection"] }, { "blessings", L["Blessings"] },
 		{ "raidcheck", L["Raid Check"] }, { "raidgrid", L["Heal Grid"] }, { "totemforge", L["Totem Forge"] },
 		{ "bosswatch", L["Boss Watch"] }, { "questscope", L["Quest Scope"] }, { "bisguide", L["BiS Guide"] },

@@ -21,6 +21,7 @@ standalone RLBetterItem release.
 - **Resurrect on dead-click** — clicking a dead friendly unit frame or raid-grid cell now casts your class resurrection spell instead of the unit menu or the normal binding: battle rez while in combat (Druid Rebirth, DK Raise Ally, Warlock Soulstone), normal rez out of combat (Resurrection, Redemption, Ancestral Spirit, ...). The unit menu still opens on live targets via a hidden proxy. Works on unit frames (player/party/raid/target) and the SentinelUI heal grid; toggle under Unit Frames -> Click Cast -> "Rez On Dead" (default on)
 
 ### Fixed
+- **Options crash**: the module list entry for the guild module used the localized title as its key and had no name — AceConfig validation failed with 'expected a string or funcref, got nil' and the config window would not open
 - **Layer "?" for good**: detection used the stale `inInstance` timestamp flag (any odd zoning left detection dead) — now a live `IsInInstance()` check; the layer key combines both shard candidate GUID fields so it works regardless of which field this client puts the layer in, and the datatext re-parses the current target itself when no layer is known yet
 - **Call to Arms on the minimap**: the named grab ran after the foreign-button scans — any scan error skipped it; it now runs first inside the rescan
 - **Layer detection** read the zone field of NPC GUIDs instead of the instance/shard field — the datatext and the layer frame stayed at "?" on layered servers; the shard field is now used (zone fallback on non-layered realms)
