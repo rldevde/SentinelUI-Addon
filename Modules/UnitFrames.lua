@@ -2156,6 +2156,9 @@ function UF:Initialize()
 	self:RegisterEvent("GROUP_ROSTER_UPDATE", function()
 		for _, f in ipairs(UF.frames) do if f.unit then UF:UpdateIndicators(f) end end
 		RefreshSecureHeaders()
+		-- party buttons show/hide themselves via unit watch (also in combat);
+		-- only the sort order is remapped, which waits for regen
+		UF:AssignPartyUnits()
 	end)
 	self:RegisterEvent("UNIT_PET", function(_, _, unit)
 		if unit == "player" then RefreshSecureHeaders() end

@@ -7,7 +7,36 @@ Note on versions: `## Version` is SentinelUI's own release number. The embedded
 BetterItem module reports `## X-BetterItem-Version` and must always equal the
 standalone RLBetterItem release.
 
-## [1.4.9]
+## [1.5.0] - 2026-11-01
+
+### Added
+- **Combat-proof party frames**: the party frames are now five fixed unit buttons (player, party1-4) whose visibility is driven by `RegisterUnitWatch` instead of a `SecureGroupHeader`. The client itself shows and hides each button, so members who join or leave during combat appear/disappear immediately. A secure header cannot reassign units or show children in combat, which is why they used to show up (or vanish) only after the fight. Sorting by name and descending order are applied by remapping units out of combat; free slots keep the unused tokens so a joiner in combat lands in the first empty slot. Layout, growth direction, spacing, `showPlayer`, `showSolo`, custom visibility and click-cast all behave as before
+- **Talent Atlas rebuilt in the SentinelUI look** (same window style as GuildHub: header band with accent rule, sidebar, inset content, scroll indicator):
+  - **Classes**: class icons and colors, full class pages with armor, weapons (verified against the game's skill data), relic/shield/dual-wield rules, resource, reagents and ammo, specializations (role, primary stat, key stats in order, hit/expertise/defense cap per spec), raid and group utility, and playable races; a BiS button per spec opens the BisGuide browser for exactly that class and spec
+  - **Races**: all ten TBC races from the game's own tooltips, including class-specific racials (Blood Fury, Berserking, Arcane Torrent, Heroic/Inspiring Presence), playable classes and starting zone; later races keep a summary
+  - **Stat Caps** (new): raid-boss caps (9% / 28% dual-wield / 16% spell hit, expertise 26 and 56, 490 defense, crushing blows), rating-per-percent table and **your live values** (hit, expertise, defense, resilience), marked green when the cap is reached
+  - **Talent Trees** (new): the full, interactive TBC talent trees of every class, not just your own - icons, max ranks and class-art background, plus click-to-spend / right-click-to-refund (max 61 total points (TBC level 70)), reset controls, and views for "Empty", "My talents", every build from the BisGuide data (points per talent, green when full) and "My talents" (your real ranks with the in-game tooltip). Prerequisite arrows are drawn and enforced (85 relations from Wowhead's TBC talent-calc data, verified against the tree layout): dependent talents cannot be skilled before their requirement is met, and a requirement cannot be unlearned while the dependent talent still has points; a Talent Trees button sits on every class page and in Quick access. The old page is now "My Talents"
+  - **Stat priority for all 27 specializations** of all nine classes (Wowhead's Burning Crusade stat guides; guides from later expansions that matched the same URLs were detected by their title and rejected), shown per spec on the class page together with the cap, the best flask, food and potion and the rotation steps taken from the BisGuide data
+  - **Best races and professions** per class (Wowhead's Burning Crusade class overviews, all nine classes complete, taken from the class overviews and, where available, the spec overviews) and **enchants and gems per specialization** taken from the newest-phase BiS list of the BisGuide data
+  - **Verified against sources**: raid buffs and debuffs per class (Warcraft Tavern buff table, classicwow.gg raid planner; numbers added, Winter's Chill, Misery, Shadow Weaving, Hemorrhage, Totem of Wrath, Unleashed Rage, Tree of Life Aura, Mangle and more) and the Feral Tank stats (expertise, agility, stamina, hit; Survival of the Fittest covers 3% of the 5.6% crit immunity) from Wowhead, Icy Veins and Warcraft Tavern
+  - **Guides** (new): pick a class and spec and jump into the BiS browser, consumables, rotation and talent-build windows; the empty Builds page is gone
+  - Sources are listed on the Stat Caps page; data lives in `Modules/TalentAtlas/Data.lua`, German in `Locales/deDE_TalentAtlas.lua`
+
+### Fixed
+- **Heal Grid in combat**: cells are now unit-watched as well. A member leaving in combat disappears at once, and a member joining in combat appears in the first free cell (free cells are bound to the unused raid/party tokens out of combat). In combat the cells are repainted by matching their unit, not their grid position, so a re-numbered roster no longer paints the wrong member or alpha-hides a valid cell
+- **`DataTexts:Layer` errors on every login**: every module's settings table is now bound before any `Initialize` runs. An early module (the DataTexts slots) that calls into a later one (Layer slot -> InstanceTracker) hit a nil `db`
+- **Talent Atlas showed 200+ "points" per tree on TBC Anniversary**: this client returns `(tabID, name, icon)` from `GetTalentTabInfo`, not `(name, icon, pointsSpent)`; the icon file ID was formatted as a point count. The return shape is detected, the real tree name is used, and the totals are summed from the actual `GetTalentInfo` ranks (a mismatch with the API value is shown as "(API: n)")
+- **Talent Atlas content**: Rogue specs show Combat before Legion and Outlaw from Legion on; Hunters are listed as melee only from the Survival rework; race pages state that they list the original racial abilities and that these change between expansions; the modern talent view is a readable node list instead of a compressed, overlapping pseudo-grid
+- **False bag-full alerts**: the warning waits one second after the last `BAG_UPDATE` before counting free slots, so transient zero-free results during inventory refreshes no longer trigger it
+- **Accidental globals removed**: GuildHub's `OnComm2`/`Hello2` and BetterItem's `LinkToItemIDSafe` leaked into `_G` under generic names; they are now module/file-local
+- **Unbounded `while` loops over global button names** (gossip title/option buttons, bank item slots) now have an upper bound, so an unexpected client can never spin forever
+- **Coordinates datatext** no longer errors when the map position API returns no coordinates (nil x/y)
+- **Missing German strings** for the party-assignment, preview and raid-log messages
+
+### Changed
+- The party group header (`SentinelUI_PartyHeader`) is now a plain holder frame with five unit buttons; the raid, raid-40, main-tank and party-pet frames keep their secure group headers (their grouping/sorting cannot be reproduced with static units), so for those the roster is still refreshed after combat
+
+## [1.4.9] - 2026-10-31
 
 ### Fixed
 - **RaidGrid click-casts hit the player's target instead of the cell** — the rez/hybrid macros evaluated `[dead]`/`[help]` conditions against the current target; they now use explicit `[@unit]` tokens, so healing via the grid works regardless of who is targeted (also fixed in the `/stopmacro` line of menu bindings)

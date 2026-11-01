@@ -402,7 +402,7 @@ local function PlayerCoords()
 	local pos = C_Map.GetPlayerMapPosition(map, "player")
 	if not pos then return end
 	local x, y = pos:GetXY()
-	if S.IsSecret(x) then return end
+	if not x or not y or S.IsSecret(x) then return end
 	return x * 100, y * 100
 end
 DT.PlayerCoords = PlayerCoords

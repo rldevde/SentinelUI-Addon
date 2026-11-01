@@ -18,6 +18,7 @@ local QUALITY_KEY = {
 
 local btn
 local rbtn -- repair button (merchant only)
+local LinkToItemIDSafe
 
 local function MaxQuality()
     return math.min(3, math.max(0, (addon.db and addon.db.sellQuality) or 0))
@@ -378,7 +379,7 @@ local function CreateButton()
 end
 
 -- item id from link (local copy so the file has no load-order dependency)
-function LinkToItemIDSafe(link)
+LinkToItemIDSafe = function(link)
     if not link then return nil end
     if GetItemInfoInstant then
         local id = GetItemInfoInstant(link)

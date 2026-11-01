@@ -1577,7 +1577,7 @@ function SK:SkinGossip(frame)
 	local classicButtons, found = 0, {}
 	SetTextColorSafe("GossipGreetingText", TEXT_COLOR)
 	found.GreetingText = _G.GossipGreetingText and true or false
-	while _G["GossipTitleButton" .. (classicButtons + 1)] do
+	while classicButtons < 64 and _G["GossipTitleButton" .. (classicButtons + 1)] do
 		classicButtons = classicButtons + 1
 		SkinParchmentButton(_G["GossipTitleButton" .. classicButtons])
 	end
@@ -1629,7 +1629,7 @@ function SK:SkinGossip(frame)
 		end
 	end
 	local i2 = 1
-	while _G["GossipGreetingOptionButton" .. i2] do
+	while i2 <= 64 and _G["GossipGreetingOptionButton" .. i2] do
 		SkinParchmentButton(_G["GossipGreetingOptionButton" .. i2])
 		i2 = i2 + 1
 	end

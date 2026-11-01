@@ -3,7 +3,7 @@
 ## Notes: Complete user interface replacement
 ## Notes-deDE: Kompletter Ersatz der Benutzeroberfläche
 ## Author: xRL-Dev.de
-## Version: 1.4.9
+## Version: 1.5.0
 ## IconTexture: Interface\AddOns\SentinelUI\Media\Textures\Logo
 ## X-Website: https://xrl-dev.de/
 ## X-BugTracker: https://xrl-dev.de/bugtracker
@@ -22,6 +22,7 @@ Core\Compat.lua
 Locales\enUS.lua
 Locales\deDE.lua
 Locales\deDE_GuildHub.lua
+Locales\deDE_TalentAtlas.lua
 Core\Defaults.lua
 Core\Media.lua
 Core\Toolkit.lua
@@ -86,6 +87,7 @@ Modules\GuildHub.lua
 Modules\GuildHubWidgets.lua
 Modules\GuildHubUI.lua
 Modules\GuildHubTabs.lua
+Modules\TalentAtlas\Data.lua
 Modules\TalentAtlas.lua
 DiscordData.lua
 Modules\Decurse.lua

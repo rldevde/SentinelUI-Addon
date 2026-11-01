@@ -165,9 +165,14 @@ function S:GetModule(name)
 end
 
 function S:InitializeModules()
+	-- bind every module's settings first: a module initialised early (e.g. the
+	-- DataTexts slots) may already call into a later module, which then needs
+	-- its db even though its own Initialize has not run yet
 	for _, mod in ipairs(self.moduleOrder) do
 		mod.db = self.db.profile[mod.dbKey]
 		mod.private = self.private and self.private[mod.dbKey]
+	end
+	for _, mod in ipairs(self.moduleOrder) do
 		local enabled = not (mod.private and mod.private.enable == false)
 		if enabled and mod.Initialize then
 			self:SafeCall(mod.name .. ":Initialize", mod.Initialize, mod)

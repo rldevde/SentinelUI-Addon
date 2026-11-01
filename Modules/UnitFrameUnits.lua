@@ -253,6 +253,112 @@ function UF:CreateHeader(key, title, pos, opts)
 	return header
 end
 
+-- Party frames: five fixed unit buttons (player, party1..4) whose visibility
+-- is driven by RegisterUnitWatch. A SecureGroupHeader cannot reassign units or
+-- show children while in combat (its refresh has to wait for regen), so
+-- members who join or leave mid-fight only appeared/disappeared afterwards.
+-- With unit watch the client shows/hides each button itself, in combat too.
+-- Sorting (name / descending) is applied by remapping units out of combat.
+local PARTY_TOKENS = { "player", "party1", "party2", "party3", "party4" }
+
+function UF:PartySlotUnits()
+	local db = self.db.units.party
+	local existing, spare = {}, {}
+	for _, tok in ipairs(PARTY_TOKENS) do
+		if tok == "player" and db.showPlayer == false then
+			-- player slot omitted
+		elseif UnitExists(tok) then
+			existing[#existing + 1] = tok
+		else
+			spare[#spare + 1] = tok
+		end
+	end
+	if db.sortMethod == "NAME" then
+		table.sort(existing, function(a, b) return (UnitName(a) or "") < (UnitName(b) or "") end)
+	end
+	if db.sortDir == "DESC" then
+		local n = #existing
+		for i = 1, floor(n / 2) do existing[i], existing[n - i + 1] = existing[n - i + 1], existing[i] end
+	end
+	-- free slots keep the unused tokens so a joiner in combat lands in the
+	-- first empty slot without any attribute change
+	for _, tok in ipairs(spare) do existing[#existing + 1] = tok end
+	return existing
+end
+
+function UF:AssignPartyUnits()
+	local holder = self.partyHolder
+	if not holder then return end
+	if InCombatLockdown() then
+		if not self._partyQueued then
+			self._partyQueued = true
+			S:RunOutOfCombat(function()
+				self._partyQueued = nil
+				self:AssignPartyUnits()
+			end)
+		end
+		return
+	end
+	local list = self:PartySlotUnits()
+	for i, btn in ipairs(holder.buttons) do
+		local unit = list[i]
+		if btn:GetAttribute("unit") ~= unit then btn:SetAttribute("unit", unit) end
+	end
+end
+
+local function PartyLayout(holder)
+	if InCombatLockdown() then return S:RunOutOfCombat(holder.Layout) end
+	local db = UF.db.units.party
+	local growth = growthMap[db.growth or "DOWN"] or growthMap.DOWN
+	local spacing = db.spacing or 3
+	local w, h = db.width, db.height
+	for i, btn in ipairs(holder.buttons) do
+		btn:SetSize(w, h)
+		btn.db = db
+		if btn.suiInit then UF:ConfigureFrame(btn) end
+		btn:ClearAllPoints()
+		local off = i - 1
+		btn:SetPoint(growth.anchor, holder, growth.anchor, growth.x * off * (w + spacing), growth.y * off * (h + spacing))
+	end
+	if growth.y == 0 then
+		holder:SetSize(5 * w + 4 * spacing, h)
+	else
+		holder:SetSize(w, 5 * h + 4 * spacing)
+	end
+	local visibility = db.showSolo and "[petbattle] hide; [@raid6,exists] hide; show"
+		or "[petbattle] hide; [@raid6,exists] hide; [group] show; hide"
+	if type(db.visibility) == "string" and db.visibility ~= "" then visibility = db.visibility end
+	if not db.enable then visibility = "hide" end
+	RegisterStateDriver(holder, "visibility", visibility)
+	S:DisableMover("party", not db.enable)
+	UF:AssignPartyUnits()
+end
+
+function UF:CreateStaticParty(key, title, pos)
+	local db = self.db.units[key]
+	local holder = CreateFrame("Frame", "SentinelUI_PartyHeaderHolder", UIParent)
+	holder.key, holder.title, holder.holder = key, title, holder
+	holder.buttons = {}
+	holder:SetSize(db.width, db.height)
+	local stub = { key = key, title = title }
+	for i, tok in ipairs(PARTY_TOKENS) do
+		local btn = CreateFrame("Button", "SentinelUI_PartyHeaderUnitButton" .. i, holder, "SecureUnitButtonTemplate")
+		btn:SetAttribute("toggleForVehicle", true)
+		btn:SetAttribute("unit", tok)
+		btn:SetSize(db.width, db.height)
+		S:SafeCall("UnitFrames:InitChild", self.InitGroupChild, self, stub, btn)
+		RegisterUnitWatch(btn)
+		holder.buttons[i] = btn
+	end
+	holder.Layout = function() PartyLayout(holder) end
+	S:CreateMover(holder, key, title, pos, "unitframes")
+	self.partyHolder = holder
+	self.headers[key] = holder
+	holder:Show()
+	holder.Layout()
+	return holder
+end
+
 function UF:UpdateHeaders()
 	for _, header in pairs(self.headers) do
 		if header.Layout then
@@ -278,7 +384,7 @@ function UF:CreateUnits()
 	if not S.isClassic then
 		self:CreateStack("arena", "arena", 5, L["Arena"], { "RIGHT", "UIParent", "RIGHT", -100, 80 })
 	end
-	self:CreateHeader("party", L["Party"], { "TOPLEFT", "UIParent", "TOPLEFT", 70, -280 }, { party = true, raidUnits = true })
+	self:CreateStaticParty("party", L["Party"], { "TOPLEFT", "UIParent", "TOPLEFT", 70, -280 })
 	-- group pet frames (SecureGroupPetHeaderTemplate = Blizzard pet header);
 	-- pcall-guarded in case a client lacks the template
 	if self.db.units.partypet then

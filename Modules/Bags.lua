@@ -1498,7 +1498,7 @@ function B:Initialize()
 			end
 		end
 		local n = 0
-		while _G["BankFrameItem" .. (n + 1)] or _G["BankItem" .. (n + 1)] do n = n + 1 end
+		while n < 128 and (_G["BankFrameItem" .. (n + 1)] or _G["BankItem" .. (n + 1)]) do n = n + 1 end
 		S:Print("BankItems:", n, "generic:", NUM_BANKGENERIC_SLOTS)
 		for i = 1, NUM_CONTAINER_FRAMES or 13 do
 			local cf = _G["ContainerFrame" .. i]

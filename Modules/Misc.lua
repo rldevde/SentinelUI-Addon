@@ -393,20 +393,28 @@ local function AmmoCheck()
 end
 
 -- Bag full warning ------------------------------------------------------------
--- one-shot toast when free bag space drops to <= 3 slots (60s throttle)
-local lastBagWarn, lastFree = 0, 99
+-- Recount after BAG_UPDATE settles; several bag events fire while the client
+-- is still moving/reloading inventory data, which can briefly report zero free.
+local lastBagWarn, lastFree, bagCheckSerial = 0, 99, 0
 function M:BAG_UPDATE()
 	if self.questItemRefresh then self.questItemRefresh() end
 	AmmoCheck()
 	if self.db.bagFullWarn == false or not S.GetContainerNumFreeSlots then return end
-	local free = 0
-	for bag = 0, 4 do free = free + (S.GetContainerNumFreeSlots(bag) or 0) end
-	if free <= 3 and free < lastFree and GetTime() - lastBagWarn > 60 then
-		lastBagWarn = GetTime()
-		S:Print(format(L["Bags almost full: %d free slots"], free))
-		if PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPEN or 856) end
-	end
-	lastFree = free
+	bagCheckSerial = bagCheckSerial + 1
+	local serial = bagCheckSerial
+	C_Timer.After(1, function()
+		if serial ~= bagCheckSerial or not M.db or M.db.bagFullWarn == false then return end
+		local free = 0
+		for bag = 0, S.NUM_BAG_SLOTS or 4 do
+			free = free + (S.GetContainerNumFreeSlots(bag) or 0)
+		end
+		if free <= 3 and free < lastFree and GetTime() - lastBagWarn > 60 then
+			lastBagWarn = GetTime()
+			S:Print(format(L["Bags almost full: %d free slots"], free))
+			if PlaySound then PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPEN or 856) end
+		end
+		lastFree = free
+	end)
 end
 
 -- Friend online ding ----------------------------------------------------------

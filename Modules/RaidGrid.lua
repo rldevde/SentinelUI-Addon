@@ -371,6 +371,10 @@ local function MakeCell(parent)
 	end)
 	b:SetScript("OnLeave", function(c) c.hl:Hide() GameTooltip:Hide() end)
 	b:Hide()
+	-- unit watch = the client shows/hides the cell as its unit appears or
+	-- vanishes, so members leaving (or joining into a spare cell) in combat
+	-- update at once; Show/Hide/SetAttribute are blocked there for us
+	RegisterUnitWatch(b)
 	return b
 end
 
@@ -753,30 +757,64 @@ function RG:Refresh()
 	for g = 1, MAX_GROUPS do
 		local list = members[g]
 		if list and #list > 0 then maxUsed = g end
-		for r = 1, MAX_ROWS do
-			local cell, m = self.cells[g][r], list and list[r]
-			if combat then
-				-- protected frames: Show/Hide/SetAttribute are blocked in combat.
-				-- Repaint slots still showing the same unit, alpha-hide the rest
-				-- and re-layout after combat.
-				if m and cell:IsShown() and cell.unit == m.unit then
+	end
+	if combat then
+		-- protected cells: no Show/Hide/SetAttribute. Unit watch already shows
+		-- a cell whose unit exists and hides it when the unit is gone, so just
+		-- repaint every visible cell from the member that owns its unit now
+		-- (matched by unit, not by grid position) and alpha-hide strays
+		local byUnit = {}
+		for _, list in pairs(members) do
+			for _, m in ipairs(list) do byUnit[m.unit] = m end
+		end
+		for g = 1, MAX_GROUPS do
+			for r = 1, MAX_ROWS do
+				local cell = self.cells[g][r]
+				if cell:IsShown() then
+					local m = cell.unit and byUnit[cell.unit]
+					if m then
+						cell.m = m
+						PaintCell(cell, m)
+					else
+						cell:SetAlpha(0)
+						self.combatDirty = true
+					end
+				end
+			end
+		end
+	else
+		-- free cells are bound to the tokens nobody uses yet, so someone who
+		-- joins during combat appears in the first free cell by unit watch
+		local spare, si = {}, 1
+		if IsInRaid() then
+			for k = 1, 40 do if not UnitExists("raid" .. k) then spare[#spare + 1] = "raid" .. k end end
+		else
+			for k = 1, 4 do if not UnitExists("party" .. k) then spare[#spare + 1] = "party" .. k end end
+		end
+		for g = 1, MAX_GROUPS do
+			local list = members[g]
+			for r = 1, MAX_ROWS do
+				local cell, m = self.cells[g][r], list and list[r]
+				if m then
+					if cell.unit ~= m.unit then
+						cell.unit = m.unit
+						cell:SetAttribute("unit", m.unit)
+						self:ApplyClicksTo(cell)
+					end
 					cell.m = m
+					cell:Show()
 					PaintCell(cell, m)
-				elseif cell:IsShown() then
-					cell:SetAlpha(0)
-					self.combatDirty = true
+				else
+					local tok = spare[si]
+					si = si + 1
+					if cell.unit ~= tok then
+						cell.unit = tok
+						cell:SetAttribute("unit", tok)
+						self:ApplyClicksTo(cell)
+					end
+					cell.m = nil
+					if not tok then cell:Hide() end
 				end
-			elseif m then
-				if cell.unit ~= m.unit then
-					cell.unit = m.unit
-					cell:SetAttribute("unit", m.unit)
-					self:ApplyClicksTo(cell)
-				end
-				cell.m = m
-				cell:Show()
-				PaintCell(cell, m)
-			else
-				cell:Hide()
 			end
 		end
 	end

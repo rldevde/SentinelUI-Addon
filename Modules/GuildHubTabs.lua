@@ -2293,7 +2293,7 @@ function GH:Initialize()
 		if p.myChars[myName].main then Send("M|" .. p.myChars[myName].main) end
 	end
 	-- events
-	self:RegisterEvent("CHAT_MSG_ADDON", OnComm2)
+	self:RegisterEvent("CHAT_MSG_ADDON", GH.OnComm2)
 	self:RegisterEvent("GUILD_ROSTER_UPDATE", function() Roster(true) if GH:IsShown("roster") then GH:RenderTab("roster") end end)
 	self:RegisterEvent("GUILDBANKFRAME_OPENED", function() C_Timer.After(0.5, function() GH:ShareGuildBank() end) end)
 	self:RegisterEvent("CHAT_MSG_LOOT", function(_, _, msg) S:SafeCall("GuildHub:Loot", GH.OnLootMsg, GH, msg) end)
@@ -2324,7 +2324,7 @@ function GH:Initialize()
 		end
 	end)
 	-- sync hello + periodic re-request
-	Hello2()
+	GH.Hello2()
 	C_Timer.NewTicker(900, function() Send("Q|") end)
 	self:RegisterEvent("TRADE_SKILL_SHOW", function() GH:Delay(0.7, GH.ScanTradeRecipes, GH) end)
 	GH:Delay(8, GH.ScanAndShareProfs, GH)
@@ -2445,11 +2445,11 @@ function GH:SetupShell()
 end
 
 -- comm entry point defined in GuildHub.lua
-function OnComm2(_, _, prefix, msg, dist, sender)
+function GH.OnComm2(_, _, prefix, msg, dist, sender)
 	GH:OnCommRaw(prefix, msg, dist, sender)
 end
 
-function Hello2()
+function GH.Hello2()
 	Send("V|" .. (GH._VERSION or 1) .. "|" .. (Shared() and Shared().ver or 0))
 	GH:Delay(3, function() Send("Q|") end)
 end
