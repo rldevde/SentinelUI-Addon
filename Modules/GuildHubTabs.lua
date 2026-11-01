@@ -154,6 +154,7 @@ tabs.finder = function(self, page)
 			lv:SetText(tostring(o.g.lvl or "?"))
 			local hb = CreateFrame("Button", nil, dp)
 			hb:SetPoint("TOPLEFT", 4, yy - 2) hb:SetPoint("TOPRIGHT", -4, yy - 2) hb:SetHeight(16)
+			hb:RegisterForClicks("AnyUp")
 			hb:SetScript("OnClick", function(_, b) if b == "RightButton" then Invite(o.n) else Whisper(o.n) end end)
 			yy = yy - 18
 		end
@@ -1329,31 +1330,36 @@ end
 
 function GH:UpdateCTA()
 	local p = Priv()
-	if p and p.settings.ctaButton == false then
-		if self.cta then self.cta:Hide() end
-		return
+	local on = not (p and p.settings.ctaButton == false)
+	-- Call to Arms is a datatext in the bottom LeftChat panel (next to Gold
+	-- and Durability), no longer a minimap-family icon in the ButtonBars
+	local dt = S.GetModule and S:GetModule("DataTexts")
+	local list = dt and dt.db and dt.db.panels and dt.db.panels.LeftChat
+	if list then
+		local idx
+		for i, n in ipairs(list) do if n == "CallToArms" then idx = i break end end
+		if on and not idx then
+			list[#list + 1] = "CallToArms"
+		elseif not on and idx then
+			tremove(list, idx)
+		end
+		local panel = dt.panels and dt.panels.LeftChat
+		if panel then
+			dt:EnsureSlotCount(panel, #list)
+			dt:LayoutPanel(panel)
+		end
 	end
-	if not self.cta then
-		-- registered as a minimap-family button: ButtonBars collects it into the
-		-- bottom icon bar automatically, with the horn texture as its icon
-		self.cta = S:CreateMinimapButton({
-			name = "cta",
-			icon = "Interface\\Icons\\INV_Misc_Horn_04",
-			angle = 280,
-			onLeft = function() GH:CallToArms() end,
-			tooltip = function()
-				GameTooltip:AddLine(L["Call to Arms"])
-				GameTooltip:AddLine(L["Click: call the guild to your position · Drag: move"], 1, 1, 1)
-			end,
-		})
+	-- retire the old icon button if a previous session created it, and take
+	-- it back out of the ButtonBars dock
+	if self.cta then
+		self.cta:Hide()
+		self.cta:SetScript("OnClick", nil)
 	end
-	-- hand it to ButtonBars explicitly (auto-scan skips SentinelUI-named buttons
-	-- unless collectSUI is on)
 	local bb = S.GetModule and S:GetModule("ButtonBars")
-	if bb and bb.GrabButton and self.cta:GetParent() == Minimap then
-		bb:GrabButton(self.cta, "SentinelUIMinimapButton_cta")
+	if bb and bb.ReleaseButton then
+		local btn = _G.SentinelUIMinimapButton_cta
+		if btn then pcall(bb.ReleaseButton, bb, btn) end
 	end
-	self.cta:Show()
 end
 
 function GH:CallToArms(note)
@@ -2175,6 +2181,8 @@ function GH:WishlistDialog()
 		f:SetSize(480, 340)
 		f:SetPoint("CENTER")
 		f:SetFrameStrata("FULLSCREEN_DIALOG")
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		f:SetClampedToScreen(true)
 		f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
 		f:SetScript("OnDragStart", f.StartMoving)
@@ -2640,6 +2648,8 @@ function GH:TeamsDialog(mode)
 		f:SetSize(500, 400)
 		f:SetPoint("CENTER")
 		f:SetFrameStrata("FULLSCREEN_DIALOG")
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		f:SetClampedToScreen(true)
 		f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
 		f:SetScript("OnDragStart", f.StartMoving)

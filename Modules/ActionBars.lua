@@ -1165,6 +1165,8 @@ function AB:ToggleKeybindMode()
 	if not bindFrame then
 		bindFrame = CreateFrame("Button", "SentinelUIKeybindFrame", UIParent)
 		bindFrame:SetFrameStrata("DIALOG")
+		bindFrame:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		bindFrame:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		bindFrame:EnableMouse(true)
 		bindFrame:EnableKeyboard(true)
 		bindFrame:EnableMouseWheel(true)

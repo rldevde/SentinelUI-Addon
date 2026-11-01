@@ -1069,6 +1069,14 @@ local function DrawTree(ctx, x, ti, td, data, ci, onChange)
 		tex:SetPoint("BOTTOMRIGHT", -2, 2)
 		tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 		if talentData.i then tex:SetTexture(talentData.i) end
+		-- learned-state glow: an OVERLAY tint instead of tinting the backdrop
+		-- border (which paints the whole BLANK-edged cell gold on this client)
+		local glow = b:CreateTexture(nil, "BORDER", nil, 1)
+		glow:SetAllPoints()
+		glow:SetTexture([[Interface\Buttons\WHITE8X8]])
+		glow:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.22)
+		glow:Hide()
+		b.suiLearned = glow
 		local lbl = S:FontString(b, 10, "OUTLINE", S.media.numberFont or S.media.font, nil, "RIGHT")
 		lbl:SetPoint("BOTTOMRIGHT", -2, 2)
 		tex:SetDesaturated(rank == 0)
@@ -1077,8 +1085,9 @@ local function DrawTree(ctx, x, ti, td, data, ci, onChange)
 			local full = rank >= (talentData.r or 1)
 			lbl:SetText(rank .. "/" .. (talentData.r or 1))
 			lbl:SetTextColor(full and 0.3 or 1, full and 1 or 0.82, full and 0.3 or 0.1)
-			b:SetBackdropBorderColor(GOLD[1], GOLD[2], GOLD[3], 0.95)
+			b.suiLearned:Show()
 		else
+			if b.suiLearned then b.suiLearned:Hide() end
 			lbl:SetText((talentData.r or 1) > 1 and ("0/" .. talentData.r) or "")
 			lbl:SetTextColor(0.7, 0.7, 0.7)
 		end
@@ -1392,6 +1401,8 @@ local function BuildWindow()
 	f:SetSize(WIN_W, WIN_H)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetClampedToScreen(true)
 	f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
 	f:SetScript("OnDragStart", f.StartMoving)

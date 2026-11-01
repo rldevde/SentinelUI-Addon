@@ -40,6 +40,8 @@ function DR:BuildFrame()
 	f:SetSize(300, 44 + ROWS * 16)
 	f:SetPoint("TOP", UIParent, "TOP", 0, -180)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	S:CreateBackdrop(f, "Default")
 	f.title = S:FontString(f, 12, "OUTLINE", S.media.unitFont)
 	f.title:SetPoint("TOP", 0, -6)

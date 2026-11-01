@@ -272,6 +272,7 @@ function TF:ToggleSetMenu(anchor)
 		r.text:SetText(text)
 		r:SetPoint("TOPLEFT", menu, "TOPLEFT", 4, -(4 + (n - 1) * 18))
 		r:SetPoint("TOPRIGHT", menu, "TOPRIGHT", -4, -(4 + (n - 1) * 18))
+		r:RegisterForClicks("AnyUp")
 		r:SetScript("OnClick", function(_, btn)
 			if btn == "RightButton" and rightClick then rightClick() else if click then click() end end
 			menu:Hide()

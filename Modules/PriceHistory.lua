@@ -194,6 +194,8 @@ local function ShowChart(itemID, link)
 		chart:SetScript("OnDragStop", chart.StopMovingOrSizing)
 		chart:SetClampedToScreen(true)
 		chart:SetFrameStrata("DIALOG")
+		chart:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		chart:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		chart.title = S:FontString(chart, 12, "OUTLINE", S.media.unitFont)
 		chart.title:SetPoint("TOP", 0, -10)
 		chart.plot = CreateFrame("Frame", nil, chart)

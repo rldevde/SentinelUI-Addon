@@ -5,6 +5,7 @@ local addon = RLBetterItem
 -- of any hovered player (via inspect data), all toggleable in settings
 
 local unitCache = {}   -- guid -> { ilvl, score, specKey, pts, t }
+local SELF_TTL = 30     -- own gear/spec barely changes; don't rescan every hover
 local inspected = {}   -- guid -> last NotifyInspect time
 local CACHE_TTL = 120
 -- the server rate-limits inspect requests; a tight hover throttle would make
@@ -15,7 +16,10 @@ local INSPECT_THROTTLE = 15
 -- the detected spec and the talent point distribution. items/class are kept
 -- so uncached entries can be recomputed later without a fresh inspect
 function addon:ComputeUnitGear(unit)
-    local specKey, pts = self:DetectUnitScale(unit)
+    -- a spec-detection failure must not take the whole tooltip down with
+    -- it: gear lines are still useful even when talents can't be read
+    local okS, specKey, pts = pcall(self.DetectUnitScale, self, unit)
+    if not okS then specKey, pts = nil, nil end
     local gs, ilvl, ready, links, class = self:GearScoreForUnit(unit)
     return {
         ilvl = ilvl,
@@ -140,8 +144,13 @@ local function AddUnitLines(tip, unit)
     local guid = UnitGUID(unit)
     local info = guid and unitCache[guid]
     if UnitIsUnit(unit, "player") then
-        info = addon:ComputeUnitGear(unit)
-        if guid then unitCache[guid] = info end
+        -- the player's own entry used to be recomputed on every single
+        -- hover (18 inventory slots + full spec detection each time);
+        -- a short TTL makes hovers cheap while respecs/gear still refresh
+        if not info or (GetTime() - info.t) > SELF_TTL then
+            info = addon:ComputeUnitGear(unit)
+            if guid then unitCache[guid] = info end
+        end
     elseif not info or (GetTime() - info.t) > CACHE_TTL then
         RequestInspect(unit)
         return
@@ -161,7 +170,7 @@ local function AddUnitLines(tip, unit)
         local specName = addon:GetScaleName(addon:GetScale(info.specKey))
         if specName then
             local dist = ""
-            if info.pts then
+            if info.pts and (info.pts[1] + info.pts[2] + info.pts[3]) > 0 then
                 dist = string.format(" |cff888888(%d/%d/%d)|r",
                     info.pts[1], info.pts[2], info.pts[3])
             end

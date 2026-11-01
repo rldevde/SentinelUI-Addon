@@ -7,6 +7,17 @@ Note on versions: `## Version` is SentinelUI's own release number. The embedded
 BetterItem module reports `## X-BetterItem-Version` and must always equal the
 standalone RLBetterItem release.
 
+## [1.5.1] - 2026-11-01
+
+### Changed
+- **Call to Arms moved into the bottom datatext bar**: the horn icon now sits in the LeftChat panel next to Gold and Durability as a real datatext (click to broadcast, tooltip shows the cooldown left) instead of a ButtonBars icon; the 'Show the Call to Arms button' setting adds/removes it there and the old icon is retired from the button bar
+- **Messenger is one tabbed window now**: every whisper/BNet conversation is a tab on a single window instead of a separate frame per contact. Left-click a tab to open it, right-click for the contact menu, middle-click closes the tab. The window drags by its header band, resizes from the bottom-right grip (chat rows rewrap to the new width) and remembers position and size. Incoming whispers while the window is open mark their tab with an unread counter instead of stealing the active conversation; header, action buttons and subtitle act on the active tab. History, bubbles, smileys, links, the reply box with input history and the log viewer are unchanged
+
+### Fixed
+- **Loot browser items lost their quality color and overlapped the instance scrollbar**: late-loading item records now repaint name+quality+icon together, the instance list is narrowed so its scrollbar stays out of the item area, and equipment the player cannot equip (level/class/armor restriction) is marked red
+- **HealGrid click-casts dropped Tree of Life on every heal**: the dead-target rez hybrid macro prefixed every spell with an unconditional `/cancelform`. Pre-Wrath druids keep Moonkin/Tree of Life (both may heal) and only unshift from bear/aquatic/cat/travel; priests and shamans only cancel Shadowform/Ghost Wolf
+- **Tooltip showed 'Spec: Class DPS (0/0/0)' for every inspected player and made hovers sluggish**: the tooltip now caches the player's own gear/spec for 30 s instead of rescanning all 18 slots on every hover, and the fake (0/0/0) suffix is hidden when the client returns no talent data; root cause: and the inspect/spec guesses in BisGuide, the inspect talent panel and the Spec datatext read the third/fifth return of `GetTalentTabInfo` as points - on TBC Anniversary that function returns `(tabID, name, icon)` with no point count. All four places now sum the real ranks from `GetTalentInfo` through a shared helper (`S.GetTalentTabPoints`), falling back to the old return-shape reads on clients that provide them
+
 ## [1.5.0] - 2026-11-01
 
 ### Added

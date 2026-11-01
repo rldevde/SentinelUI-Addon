@@ -61,6 +61,7 @@ local function BaseWindow(name, title, w, h)
 	f:SetSize(w, h)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:EnableMouse(true)
 	f:SetMovable(true)
 	f:RegisterForDrag("LeftButton")

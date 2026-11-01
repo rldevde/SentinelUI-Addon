@@ -554,22 +554,32 @@ function IT:CheckLayer(guid)
 	-- zoning paths and would silence detection for the rest of the session
 	if IsInInstance and select(1, IsInInstance()) then return end
 	local npcID, zoneID, utype, instID = NpcIDFromGUID(guid)
-	if not zoneID or zoneID == 0 or not npcID then return end
+	if not npcID then return end
 	if utype ~= "Creature" then return end
 	-- combined shard key: whichever guid field carries the layer on this
 	-- client (instance vs zone varies), two players on different shards must
 	-- produce a different key and the same shard an identical one
-	zoneID = format("%d:%d", instID or 0, zoneID)
+	-- shard key: instID carries the layer on this client; zoneID is
+	-- frequently 0 in the open world and must not gate detection
+	zoneID = format("%d:%d", instID or 0, zoneID or 0)
 	if D.companions and D.companions[npcID] then return end
 	if D.critters and D.critters[npcID] then return end
 	local data = self:Data()
 	data.layers = data.layers or {}
 	local e = data.layers[zoneID]
 	if not e then
-		-- cap stored layer ids (mirrors the 20 layer cap used for launch realms)
+		-- cap stored layer ids; once full, evict the oldest so the layer
+		-- we are standing on can always be recorded and indexed
 		local count = 0
 		for _ in pairs(data.layers) do count = count + 1 end
-		if count >= 20 then return end
+		if count >= 20 then
+			local oKey, oldest = nil, math.huge
+			for k, v in pairs(data.layers) do
+				local t = v.firstSeen or v.lastSeen or 0
+				if t < oldest then oldest, oKey = t, k end
+			end
+			if oKey then data.layers[oKey] = nil end
+		end
 		e = { firstSeen = GetServerTime() }
 		data.layers[zoneID] = e
 	end
@@ -583,9 +593,12 @@ function IT:CheckLayer(guid)
 end
 
 function IT:LayerNum(zoneID)
+	-- normalize: old sessions stored numeric zone ids, new keys are
+	-- "instID:zoneID" strings — sort/compare must use one type only
 	local keys = {}
-	for k in pairs(self:Data().layers or {}) do keys[#keys + 1] = k end
+	for k in pairs(self:Data().layers or {}) do keys[#keys + 1] = tostring(k) end
 	sort(keys)
+	zoneID = tostring(zoneID)
 	for i, k in ipairs(keys) do if k == zoneID then return i end end
 	return 0
 end

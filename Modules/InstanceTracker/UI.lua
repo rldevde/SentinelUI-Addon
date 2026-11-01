@@ -166,6 +166,7 @@ local function BuildFrame()
 	f:SetSize(WIN_W, WIN_H)
 	f:SetPoint("CENTER", UIParent, "CENTER", -60, 30)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:SetMovable(true)
@@ -320,6 +321,7 @@ local function RenderLog(f)
 		r.status:SetTextColor(rr * 0.8, gg * 0.8, bb * 0.8)
 		local idx = i
 		r.del:Show()
+		del:RegisterForClicks("AnyUp")
 		r.del:SetScript("OnClick", function() IT:DeleteInstance(idx) end)
 		r:SetScript("OnClick", function(_, btn)
 			if btn == "RightButton" then
@@ -508,6 +510,7 @@ local function MakeDialog(name, title, w, h)
 	f:SetSize(w, h)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("FULLSCREEN_DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:EnableMouse(true)
 	f:SetMovable(true)
 	f:RegisterForDrag("LeftButton")

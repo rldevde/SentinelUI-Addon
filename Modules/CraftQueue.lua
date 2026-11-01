@@ -106,6 +106,8 @@ function CQ:BuildFrame(anchor)
 	f:SetSize(WIN_W, 60 + NUM_ROWS * ROW_H)
 	f:SetPoint("TOPLEFT", anchor or UIParent, "TOPRIGHT", 10, 0)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:EnableMouse(true)
 	f:SetMovable(true)
 	f:RegisterForDrag("LeftButton")

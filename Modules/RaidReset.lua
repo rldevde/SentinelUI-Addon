@@ -546,6 +546,8 @@ function RR:BuildFrame()
 	f:SetSize(WIN_W, WIN_H)
 	f:SetPoint("CENTER", UIParent, "CENTER", -60, 30)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:SetMovable(true)

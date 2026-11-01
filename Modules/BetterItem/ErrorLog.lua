@@ -98,6 +98,7 @@ function addon:ShowErrorLog()
         viewer:SetSize(700, 420)
         viewer:SetPoint("CENTER")
         viewer:SetFrameStrata("DIALOG")
+        viewer:SetToplevel(true)  -- newest/clicked window rises inside its strata
         viewer:EnableMouse(true)
         viewer:SetMovable(true)
         viewer:RegisterForDrag("LeftButton")

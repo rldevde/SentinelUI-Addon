@@ -234,13 +234,14 @@ S.defaults = {
 			hyperlinkHover = true, throttle = 0,
 			stickyChat = true, history = true, historySize = 100,
 		},
+		charpanel = { enable = false },
 		datatexts = {
 			fontSize = 12, panelHeight = 22, panelTransparency = true, dock = true,
 			font = "Sentinel Sans", fontOutline = "NONE", textColor = { r = 0.92, g = 0.92, b = 0.95 },
 			timeFormat24 = true, localTime = true, goldFormat = "SMART", goldCoins = true, goldRotate = true,
 			wordWrap = false, noLabel = false,
 			panels = {
-				LeftChat = { "System", "Durability", "Gold", "Honor", "Mail", "Layer" },
+				LeftChat = { "System", "Gold", "Layer", "Auctions", "Kills", "Loot", "Durability", "Honor", "Mail" },
 				RightChat = { "Friends", "Guild", "Bags" },
 				Minimap = { "Time", "Coords" },
 			},

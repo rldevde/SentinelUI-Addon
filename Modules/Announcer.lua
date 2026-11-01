@@ -157,6 +157,8 @@ function AN:BuildWindow()
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	S:SetTemplate(f, "Default")
 	f:Hide()
 	tinsert(UISpecialFrames, "SentinelUIAnnouncer")

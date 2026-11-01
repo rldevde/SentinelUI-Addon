@@ -25,6 +25,8 @@ function LH:BuildFrame()
 	frame:SetSize(460, 300)
 	frame:SetPoint("CENTER")
 	frame:SetFrameStrata("DIALOG")
+	frame:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	frame:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	frame:EnableMouse(true)
 	frame:SetMovable(true)
 	frame:RegisterForDrag("LeftButton")

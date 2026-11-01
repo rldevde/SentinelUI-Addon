@@ -812,6 +812,8 @@ function PB:BuildGrid()
 	f:RegisterForDrag("LeftButton")
 	f:SetClampedToScreen(true)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	S:SetTemplate(f, "Default", "DIALOG")
 	f:Hide()
 	tinsert(UISpecialFrames, "SentinelUIBlessingGrid")

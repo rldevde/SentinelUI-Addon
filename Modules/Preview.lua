@@ -18,6 +18,8 @@ local function Holder()
 		holder = CreateFrame("Frame", "SentinelUIPreviewHolder", UIParent)
 		holder:SetAllPoints(UIParent)
 		holder:SetFrameStrata("DIALOG")
+		holder:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		holder:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	end
 	return holder
 end

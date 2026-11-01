@@ -223,6 +223,7 @@ local function UpdateButton()
         btn:ClearAllPoints()
         btn:SetPoint(p[1], UIParent, p[3], p[4], p[5])
         btn:SetFrameStrata("DIALOG")
+        btn:SetToplevel(true)  -- newest/clicked window rises inside its strata
         btn:SetFrameLevel(100)
         RefreshButtonLook()
         btn:Show()
@@ -239,6 +240,7 @@ local function UpdateButton()
         -- must sit above every child of the host frame (some bag addons
         -- use high frame levels and would swallow the clicks)
         btn:SetFrameStrata("DIALOG")
+        btn:SetToplevel(true)  -- newest/clicked window rises inside its strata
         btn:SetFrameLevel((host.GetFrameLevel and host:GetFrameLevel() or 0) + 100)
         btn:EnableMouse(true)
         RefreshButtonLook()
@@ -250,6 +252,7 @@ local function UpdateButton()
         btn:ClearAllPoints()
         btn:SetPoint("RIGHT", UIParent, "RIGHT", -90, 0)
         btn:SetFrameStrata("DIALOG")
+        btn:SetToplevel(true)  -- newest/clicked window rises inside its strata
         btn:SetFrameLevel(100)
         RefreshButtonLook()
         btn:Show()
@@ -262,6 +265,7 @@ local function UpdateButton()
         if show then
             rbtn:SetParent(UIParent)
             rbtn:SetFrameStrata("DIALOG")
+            rbtn:SetToplevel(true)  -- newest/clicked window rises inside its strata
             rbtn:SetFrameLevel(200)
             rbtn:ClearAllPoints()
             if btn and btn:IsShown() then
@@ -317,6 +321,7 @@ local function CreateButton()
         local scale = self:GetEffectiveScale()
         self:SetParent(UIParent)
         self:SetFrameStrata("DIALOG")
+        self:SetToplevel(true)  -- newest/clicked window rises inside its strata
         self:SetFrameLevel(200)
         self:ClearAllPoints()
         self:SetPoint("CENTER", UIParent, "BOTTOMLEFT",

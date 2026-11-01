@@ -555,13 +555,37 @@ DT:Register("Experience", {
 })
 
 DT:Register("Layer", {
+	interval = 2,
 	events = { "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "NAME_PLATE_UNIT_ADDED", "GROUP_JOINED", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" },
 	update = function(slot)
-		local it = S:GetModule("InstanceTracker", true)
-		if it and it.ParseGUID and not (it.CurrentLayer and it:CurrentLayer()) then
-			it:ParseGUID(UnitGUID and (UnitGUID("target") or UnitGUID("mouseover")))
+		local num
+		-- self-contained: the shard is embedded in creature guids as
+		-- instID:zoneID; assign each distinct key a stable small number
+		DT.shardIDs = DT.shardIDs or {}
+		local function ShardIdx()
+			for _, u in ipairs({ "target", "mouseover", "focus", "npc" }) do
+				local g = UnitGUID and UnitGUID(u)
+				if type(g) == "string" then
+					-- any guid containing a non-player unit type; the shard
+					-- lives in the numeric middle fields whatever they are
+					local utype, a, b, c, d = g:match("([^-]+)-([^-]+)-([^-]+)-([^-]+)-([^-]+)")
+					if utype and utype ~= "Player" and utype ~= "Item" then
+						local key = table.concat({ a or "0", b or "0", c or "0", d or "0" }, ":")
+						if not DT.shardIDs[key] then
+							local n = 0
+							for _ in pairs(DT.shardIDs) do n = n + 1 end
+							DT.shardIDs[key] = n + 1
+						end
+						return DT.shardIDs[key]
+					end
+				end
+			end
 		end
-		local num = it and it.CurrentLayer and it:CurrentLayer()
+		num = ShardIdx()
+		if not num then
+			local it = S:GetModule("InstanceTracker", true)
+			num = it and it.CurrentLayer and it:CurrentLayer()
+		end
 		if num and num > 0 then
 			slot.text:SetText(Label(L["Layer"]) .. Value(tostring(num)))
 		else
@@ -577,9 +601,11 @@ DT:Register("Layer", {
 		if it and it.Data then
 			local keys = {}
 			for k in pairs(it:Data().layers or {}) do keys[#keys + 1] = k end
-			sort(keys)
+			-- old sessions stored numeric keys, new ones "inst:zone" strings
+			table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
+			local curID = it.currentLayerID and tostring(it.currentLayerID)
 			for i, k in ipairs(keys) do
-				local cur = (it.currentLayerID == k) and (" |cff00ff00(" .. L["current"] .. ")|r") or ""
+				local cur = (curID == tostring(k)) and (" |cff00ff00(" .. L["current"] .. ")|r") or ""
 				tt:AddLine(format(L["Layer %d"] .. " |cff888888(ID %s)|r%s", i, tostring(k), cur))
 			end
 			if it.friendLayers then
@@ -1016,6 +1042,30 @@ DT:Register("SentinelUI", {
 	end,
 })
 
+-- Call to Arms lives in the bottom datatext bar (LeftChat panel): horn icon
+-- + label, click broadcasts, tooltip shows the remaining cooldown. The
+-- GuildHub ctaButton setting inserts/removes it in the panel list.
+DT:Register("CallToArms", {
+	update = function(slot)
+		slot.text:SetText([[|TInterface\Icons\INV_Misc_Horn_04:14:14:0:0|t ]] .. Label(L["Call to Arms"]))
+	end,
+	enter = function(slot)
+		local tt = DT:Tooltip(slot)
+		tt:AddLine(L["Call to Arms"], S.accent.r, S.accent.g, S.accent.b)
+		local gh = S.GetModule and S:GetModule("GuildHub")
+		local left = gh and gh._ctaT and (900 - (GetTime() - gh._ctaT))
+		if left and left > 0 then
+			tt:AddLine(L["Call to Arms is on cooldown (%d min left)."]:format(floor(left / 60)), 1, 0.6, 0.4)
+		end
+		tt:AddLine(L["Click: call the guild to your position · Drag: move"], 0.7, 0.7, 0.7)
+		tt:Show()
+	end,
+	click = function()
+		local gh = S.GetModule and S:GetModule("GuildHub")
+		if gh and gh.CallToArms then gh:CallToArms() end
+	end,
+})
+
 DT:Register("None", { update = function(slot) slot.text:SetText("") end })
 
 -- Panels --------------------------------------------------------------------
@@ -1072,6 +1122,26 @@ function DT:AssignSlot(slot, name)
 	end
 end
 
+function DT:NewSlot(panel, i)
+	local slot = CreateFrame("Button", nil, panel)
+	slot:RegisterForClicks("AnyUp")
+	slot.text = S:FontString(slot, self.db.fontSize, "NONE", S.media.font)
+	slot.text:SetAllPoints()
+	slot:SetScript("OnEnter", SlotOnEnter)
+	slot:SetScript("OnLeave", GameTooltip_Hide)
+	slot:SetScript("OnClick", SlotOnClick)
+	slot.panel, slot.index = panel, i
+	return slot
+end
+
+-- panels are created with a fixed slot count; callers that append datatexts
+-- to a panel list afterwards (e.g. the Call to Arms toggle) grow it here
+function DT:EnsureSlotCount(panel, n)
+	while #panel.slots < n do
+		panel.slots[#panel.slots + 1] = self:NewSlot(panel, #panel.slots + 1)
+	end
+end
+
 function DT:CreatePanel(name, anchorFunc, numSlots)
 	local db = self.db
 	local panel = CreateFrame("Frame", "SentinelUI" .. name .. "DataPanel", UIParent)
@@ -1082,15 +1152,7 @@ function DT:CreatePanel(name, anchorFunc, numSlots)
 	anchorFunc(panel)
 	panel.slots = {}
 	for i = 1, numSlots do
-		local slot = CreateFrame("Button", nil, panel)
-		slot:RegisterForClicks("AnyUp")
-		slot.text = S:FontString(slot, db.fontSize, "NONE", S.media.font)
-		slot.text:SetAllPoints()
-		slot:SetScript("OnEnter", SlotOnEnter)
-		slot:SetScript("OnLeave", GameTooltip_Hide)
-		slot:SetScript("OnClick", SlotOnClick)
-		slot.panel, slot.index = panel, i
-		panel.slots[i] = slot
+		panel.slots[i] = self:NewSlot(panel, i)
 	end
 	panel.key = name
 	self.panels[name] = panel

@@ -325,6 +325,8 @@ local function CreateSearch()
 	f:SetSize(520, 440)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetMovable(true)
 	f:EnableMouse(true)
 	f:SetClampedToScreen(true)

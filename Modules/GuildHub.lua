@@ -756,6 +756,8 @@ local function BuildWindow()
 	f:SetSize(WIN_W, WIN_H)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetClampedToScreen(true)
 	f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
 	if f.SetResizeBounds then f:SetResizeBounds(WIN_MIN_W, WIN_MIN_H, 1600, 1200) end

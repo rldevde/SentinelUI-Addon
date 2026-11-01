@@ -766,6 +766,7 @@ function addon:ShowIconPicker(outfitName)
         iconPicker:SetSize(320, 230)
         iconPicker:SetPoint("CENTER")
         iconPicker:SetFrameStrata("DIALOG")
+        iconPicker:SetToplevel(true)  -- newest/clicked window rises inside its strata
         iconPicker:SetMovable(true)
         iconPicker:EnableMouse(true)
         iconPicker:RegisterForDrag("LeftButton")

@@ -99,10 +99,12 @@ function IN:Populate()
 		local t = f.tabs[c]
 		local name, spent
 		if c <= nTabs and GetTalentTabInfo then
-			local ok, a, b, cc, d, e = pcall(GetTalentTabInfo, c, true)
+			local ok, a, b = pcall(GetTalentTabInfo, c, true)
 			if ok then
-				-- TBC: name, icon, points | newer: id, name, desc, icon, points
-				if type(a) == "number" then name, spent = b, e else name, spent = a, cc end
+				-- TBC Anniversary: (tabID, name, icon) with no point count;
+				-- sum the real ranks through the compat helper instead
+				if type(a) == "number" then name = b else name = a end
+				spent = S.GetTalentTabPoints(c, true)
 			end
 		end
 		if name then

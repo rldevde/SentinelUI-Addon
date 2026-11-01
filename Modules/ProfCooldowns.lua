@@ -129,6 +129,8 @@ function PC:BuildFrame()
 	f:SetSize(WIN_W, WIN_H)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:EnableMouse(true)
 	f:SetMovable(true)
 	f:RegisterForDrag("LeftButton")

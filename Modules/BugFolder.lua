@@ -421,6 +421,8 @@ local function CreateWindow()
 	window:SetSize(820, 430)
 	window:SetPoint("CENTER")
 	window:SetFrameStrata("DIALOG")
+	window:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	window:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	window:SetMovable(true)
 	window:EnableMouse(true)
 	window:SetClampedToScreen(true)
@@ -656,6 +658,8 @@ function BF:OpenExport(filter, text, isReport)
 		f:SetSize(700, 440)
 		f:SetPoint("CENTER")
 		f:SetFrameStrata("FULLSCREEN_DIALOG")
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		f:SetMovable(true)
 		f:EnableMouse(true)
 		f:SetClampedToScreen(true)

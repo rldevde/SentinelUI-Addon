@@ -1509,7 +1509,7 @@ end
 
 function UF:BuildFrame(f, key)
 	f.key = key
-	f.db = self.db.units[key]
+	f.db = self.db.units[key] or {}
 	f:RegisterForClicks("AnyUp")
 	f:SetAttribute("*type1", "target")
 	f:SetAttribute("*type2", "togglemenu")
@@ -1562,8 +1562,8 @@ function UF:BuildFrame(f, key)
 	textHolder:SetAllPoints()
 	textHolder:SetFrameLevel(f:GetFrameLevel() + 6)
 	f.textHolder = textHolder
-	f.HealthText = S:FontString(textHolder, 12, self.db.fontOutline, S.media.unitFont)
-	f.PowerText = S:FontString(textHolder, 11, self.db.fontOutline, S.media.unitFont)
+	f.HealthText = S:FontString(textHolder, 12, self.db and self.db.fontOutline or "OUTLINE", S.media.unitFont)
+	f.PowerText = S:FontString(textHolder, 11, self.db and self.db.fontOutline or "OUTLINE", S.media.unitFont)
 	f.NameText = S:FontString(textHolder, 12, self.db.fontOutline, S.media.unitFont)
 	f.customTextPool = {}
 	-- level after the name for every single unit and party (raid frames stay compact)
@@ -1609,7 +1609,7 @@ function UF:BuildFrame(f, key)
 		dm:SetPoint("TOPLEFT", power, "BOTTOMLEFT", 0, -1)
 		dm:SetPoint("TOPRIGHT", power, "BOTTOMRIGHT", 0, -1)
 		dm:Hide()
-		dm.text = S:FontString(dm, 10, self.db.fontOutline, S.media.unitFont)
+		dm.text = S:FontString(dm, 10, self.db and self.db.fontOutline or "OUTLINE", S.media.unitFont)
 		dm.text:SetPoint("CENTER", dm, "CENTER", 0, 0)
 		f.DruidMana = dm
 	end

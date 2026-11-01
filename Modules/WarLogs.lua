@@ -195,6 +195,8 @@ local function BuildUI()
 	f:SetSize(640, 460)
 	f:SetPoint("CENTER")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	S:SetTemplate(f, "Default", "MEDIUM")
 	f:EnableMouse(true)
 	f:SetMovable(true) f:RegisterForDrag("LeftButton")

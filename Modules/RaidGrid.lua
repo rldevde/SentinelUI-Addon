@@ -158,10 +158,26 @@ local function RezMacro(unit, normal, battle, spell)
 	if ooc then parts[#parts + 1] = format("[@%s,dead,help] %s", unit, ooc) end
 	if spell and spell ~= "" then parts[#parts + 1] = format("[@%s,help] %s", unit, spell) end
 	-- /cast inside a macro does not unshift automatically the way plain spell
-	-- bindings do, so form classes get an explicit cancelform first
-	local unshift = (S.myClass == "DRUID" or S.myClass == "PRIEST" or S.myClass == "SHAMAN")
-		and "/cancelform\n" or ""
-	return unshift .. "/cast " .. table.concat(parts, "; ")
+-- bindings do, so forms that cannot cast need an explicit cancelform.
+-- Pre-Wrath druids may heal in Moonkin AND Tree of Life: only the
+-- physical forms (bear/aquatic/cat/travel = 1-4) are cancelled there.
+-- Priest Shadowform and Shaman Ghost Wolf are both form index 1 and
+-- cannot heal, so they get a conditional cancel too.
+local unshift = ""
+-- blocklist, not allowlist: only forms PROVEN unable to cast get a
+-- cancelform entry. Tree of Life, Moonkin and anything the client reports
+-- with an unfamiliar spell id stay untouched, so the form can never be
+-- dropped by accident.
+local NOHEAL = { [5487] = true, [9634] = true, [1066] = true, [768] = true, [783] = true,
+	[15473] = true, [2645] = true }
+local forms = (GetNumShapeshiftForms and GetNumShapeshiftForms()) or 0
+local cancel = {}
+for i = 1, forms do
+	local _, _, _, sid = GetShapeshiftFormInfo(i)
+	if sid and NOHEAL[sid] then cancel[#cancel + 1] = i end
+end
+if #cancel > 0 then unshift = format("/cancelform [form:%s]\n", table.concat(cancel, "/")) end
+return unshift .. "/cast " .. table.concat(parts, "; ")
 end
 
 -- spell picker list for the options window: keywords first, then every known

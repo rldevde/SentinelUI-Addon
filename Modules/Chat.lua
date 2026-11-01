@@ -237,6 +237,8 @@ function CH:CopyChat(frame)
 		f:SetSize(640, 340)
 		f:SetPoint("CENTER")
 		f:SetFrameStrata("DIALOG")
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		f:EnableMouse(true)
 		f:SetMovable(true)
 		f:RegisterForDrag("LeftButton")
@@ -362,6 +364,8 @@ function CH:PositionEditBox(frame)
 	end
 	eb:SetHeight(22)
 	eb:SetFrameStrata("DIALOG")
+	eb:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	eb:SetToplevel(true)  -- newest/clicked window rises inside its strata
 end
 
 function CH:StyleChatFrame(frame)

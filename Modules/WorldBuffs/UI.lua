@@ -32,6 +32,7 @@ function WB:CreateWindow()
 	S:SetTemplate(f)
 	S:CreateBackdrop(f, "Default")
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetMovable(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")

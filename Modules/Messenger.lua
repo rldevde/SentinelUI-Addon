@@ -21,13 +21,18 @@ local UnitIsDND = UnitIsDND
 local IsShiftKeyDown = IsShiftKeyDown
 local IsControlKeyDown = IsControlKeyDown
 
-local WIN_W, WIN_H = 360, 250
-local convs = {}      -- key -> conv { name, target, bnet, bnID, class, lines, frame }
-local winCount = 0
+local WIN_W, WIN_H = 430, 300
+local WIN_MIN_W, WIN_MIN_H = 330, 220
+local TAB_H = 20
+local convs = {}      -- key -> conv { name, target, bnet, bnID, class, lines, frame, tab, seq }
+local convSeq = 0     -- creation order -> stable left-to-right tab order
+local mainWin         -- the single tabbed messenger window
+local activeConv      -- conversation whose page is currently visible
 local lastConv
 local pendingPopups = {}  -- convs waiting until combat ends
 local Append          -- forward decl: used by the reply editbox handler
 local RefreshTitle    -- forward decl: used by the ? action button
+local ActivateTab, UpdateTabs, LayoutTabs  -- forward decls
 
 local function ConvKey(sender, bnet, bnID)
 	if bnet then return "bn:" .. tostring(bnID or sender) end
@@ -80,7 +85,8 @@ local function Conv(sender, bnet, bnID)
 		if c then convs[key] = c end
 	end
 	if c then return c end
-	c = { key = key, target = sender, bnet = bnet, bnID = bnID, name = ShortName(sender or "?"), lines = {} }
+	convSeq = convSeq + 1
+	c = { key = key, target = sender, bnet = bnet, bnID = bnID, name = ShortName(sender or "?"), lines = {}, seq = convSeq }
 	convs[key] = c
 	-- replay stored history; also match older keys that carry a realm suffix
 	local h = Hist()[key]
@@ -270,52 +276,180 @@ local function AddBubble(c, l)
 	S:SafeCall("Messenger:AddBubble", AddBubbleRaw, c, l)
 end
 
--- conversation window -------------------------------------------------------
-local function BuildWindow(c)
-	if c.frame then return c.frame end
-	winCount = winCount + 1
-	local off = ((winCount - 1) % 4) * 26
-	local f = CreateFrame("Frame", "SentinelUIWhisper" .. winCount, UIParent)
-	f:SetSize(WIN_W, WIN_H)
-	-- restore the position this window had last session (per conversation)
+-- conversation window: ONE shared window with a tab strip. Every whisper
+-- conversation is a tab on a single movable, resizable window instead of a
+-- separate frame per contact. The window remembers its geometry.
+
+local function SaveGeom(f)
 	MS.private = MS.private or {}
-	MS.private.messengerPos = MS.private.messengerPos or {}
-	local pos = MS.private.messengerPos[c.key]
+	MS.private.messengerMain = { x = f:GetLeft(), y = f:GetTop(), w = f:GetWidth(), h = f:GetHeight() }
+end
+
+-- rebuild every page's content width after a resize; rows have a fixed
+-- width set at creation, so re-point them and let the fontstrings rewrap
+local function ResizePages()
+	for _, conv in pairs(convs) do
+		local p = conv.frame
+		if p and p.content and p.scroll then
+			local w = p.scroll:GetWidth()
+			if w and w > 0 then
+				p.content:SetWidth(w)
+				for _, ch in ipairs({ p.content:GetChildren() }) do
+					if ch.fs then ch:SetWidth(w) end
+				end
+			end
+			SetScroll(p, p.scrollPos or 0)
+		end
+	end
+end
+
+-- sorted list of live conversations (stable creation order)
+local function ConvList()
+	local list = {}
+	local seen = {}
+	for _, c in pairs(convs) do
+		if not seen[c] then seen[c] = true list[#list + 1] = c end
+	end
+	table.sort(list, function(x, y) return (x.seq or 0) < (y.seq or 0) end)
+	return list
+end
+
+UpdateTabs = function()
+	for _, c in pairs(convs) do
+		local t = c.tab
+		if t then
+			local n = c.unread or 0
+			t.label:SetText(format("|cff%s%s|r%s", ClassHex(c.class), c.name or "?",
+				n > 0 and format(" |cffff4040(%d)|r", n) or ""))
+			local w = t.label:GetStringWidth() or 60
+			t:SetWidth(math.max(56, math.min(140, w + 24)))
+			local on = c == activeConv
+			t.bar:SetVertexColor(S.accent.r, S.accent.g, S.accent.b, on and 1 or 0)
+		end
+	end
+end
+
+LayoutTabs = function()
+	if not mainWin then return end
+	local x = 0
+	for _, c in ipairs(ConvList()) do
+		local t = c.tab
+		if t then
+			t:ClearAllPoints()
+			t:SetPoint("TOPLEFT", mainWin.tabBar, "TOPLEFT", x, 0)
+			x = x + (t:GetWidth() or 90) + 3
+		end
+	end
+end
+
+local function RemoveConv(c)
+	for k, v in pairs(convs) do if v == c then convs[k] = nil end end
+	if c.tab then c.tab:Hide() end
+	if c.frame then
+		c.frame:Hide()
+		if c.frame.editbox then c.frame.editbox:Hide() end
+	end
+	if lastConv == c then lastConv = nil end
+	if activeConv == c then
+		activeConv = nil
+		local other = ConvList()[1]
+		if other then ActivateTab(other) elseif mainWin then mainWin:Hide() end
+	end
+	LayoutTabs()
+	MS:UpdateBadge()
+end
+
+local function CreateTab(c)
+	local t = CreateFrame("Button", nil, mainWin.tabBar)
+	t:SetHeight(TAB_H)
+	t:SetWidth(90)
+	S:SetTemplate(t, "Default")
+	t.label = S:FontString(t, 10, "OUTLINE", S.media.font, nil, "CENTER")
+	t.label:SetPoint("CENTER")
+	-- accent underline for the active tab
+	t.bar = t:CreateTexture(nil, "OVERLAY")
+	t.bar:SetTexture(BLANK)
+	t.bar:SetPoint("BOTTOMLEFT", 1, 1)
+	t.bar:SetPoint("BOTTOMRIGHT", -1, 1)
+	t.bar:SetHeight(2)
+	t.bar:SetVertexColor(S.accent.r, S.accent.g, S.accent.b, 0)
+	t:RegisterForClicks("LeftButtonUp", "RightButtonUp", "MiddleButtonUp")
+	t:SetScript("OnClick", function(_, btn)
+		if btn == "MiddleButton" then RemoveConv(c)
+		elseif btn == "RightButton" then MS:ConvMenu(c)
+		else
+			if not mainWin:IsShown() then mainWin:Show() end
+			ActivateTab(c)
+		end
+	end)
+	t:SetScript("OnEnter", function(bb)
+		GameTooltip:SetOwner(bb, "ANCHOR_BOTTOM")
+		GameTooltip:SetText(L["Left-click: open  |  Right-click: menu  |  Middle-click: close tab"] or "Left-click: open  |  Right-click: menu  |  Middle-click: close tab")
+		GameTooltip:Show()
+	end)
+	t:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	c.tab = t
+end
+
+local function EnsureMain()
+	if mainWin then return mainWin end
+	local f = CreateFrame("Frame", "SentinelUIMessenger", UIParent)
+	f:SetSize(WIN_W, WIN_H)
+	MS.private = MS.private or {}
+	local pos = MS.private.messengerMain
 	if pos and pos.x then
 		f:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", pos.x, pos.y)
+		if pos.w and pos.w > WIN_MIN_W then f:SetSize(pos.w, pos.h or WIN_H) end
 	else
-		f:SetPoint("CENTER", UIParent, "CENTER", 60 + off, 40 - off)
+		f:SetPoint("CENTER", UIParent, "CENTER", 60, 40)
 	end
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:SetMovable(true)
-	f:RegisterForDrag("LeftButton")
-	f:SetScript("OnDragStart", f.StartMoving)
-	f:SetScript("OnDragStop", function(ff)
-		ff:StopMovingOrSizing()
-		MS.private.messengerPos[c.key] = { x = ff:GetLeft(), y = ff:GetTop() }
-	end)
+	f:SetResizable(true)
+	if f.SetMinResize then f:SetMinResize(WIN_MIN_W, WIN_MIN_H) end
 	S:SetTemplate(f, "Default", "TOP")
-	f:Hide()
-	c.frame = f
 
+	-- accent header band
 	f.title = S:FontString(f, 11, "OUTLINE", S.media.unitFont, nil, "LEFT")
 	f.title:SetPoint("TOPLEFT", 10, -8)
 	S:RegisterAccent(f.title, "text")
+	f.subtitle = S:FontString(f, 9, nil, S.media.font, nil, "LEFT")
+	f.subtitle:SetPoint("TOPLEFT", 10, -20)
+	f.subtitle:SetTextColor(0.55, 0.60, 0.55)
+	local rule = f:CreateTexture(nil, "ARTWORK")
+	rule:SetTexture(BLANK)
+	rule:SetPoint("TOPLEFT", 1, -30)
+	rule:SetPoint("TOPRIGHT", -1, -30)
+	rule:SetHeight(1)
+	rule:SetVertexColor(S.accent.r, S.accent.g, S.accent.b, 0.9)
 
-	-- click zone over the title: shift-click inserts the name into the reply
-	-- box, ctrl-click invites, right-click opens the contact action menu
-	f.titleBtn = CreateFrame("Button", nil, f)
-	f.titleBtn:SetPoint("TOPLEFT", 6, -4)
+	-- drag zone: only the header band moves the window, so chat text stays
+	-- clickable
+	f.drag = CreateFrame("Button", nil, f)
+	f.drag:SetPoint("TOPLEFT", 1, -1)
+	f.drag:SetPoint("TOPRIGHT", -1, -1)
+	f.drag:SetHeight(29)
+	f.drag:RegisterForDrag("LeftButton")
+	f.drag:SetScript("OnDragStart", function() f:StartMoving() end)
+	f.drag:SetScript("OnDragStop", function() f:StopMovingOrSizing() SaveGeom(f) end)
+
+	-- title click zone: shift inserts the name, ctrl invites, right-click menu
+	f.titleBtn = CreateFrame("Button", nil, f.drag)
+	f.titleBtn:SetPoint("TOPLEFT", 4, -2)
 	f.titleBtn:SetSize(190, 26)
 	f.titleBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 	f.titleBtn:SetScript("OnClick", function(_, btn)
+		local c = activeConv
+		if not c then return end
 		if btn == "RightButton" then
 			MS:ConvMenu(c)
 		elseif IsShiftKeyDown() then
-			f.editbox:SetFocus()
-			f.editbox:Insert(c.target or c.name)
+			local p = c.frame
+			if p and p.editbox then p.editbox:SetFocus() p.editbox:Insert(c.target or c.name) end
 		elseif IsControlKeyDown() and not c.bnet then
 			local inv = C_PartyInfo and C_PartyInfo.InviteUnit or InviteUnit
 			if inv then inv(c.target) end
@@ -328,29 +462,30 @@ local function BuildWindow(c)
 	end)
 	f.titleBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-	-- guild / level / class subtitle line (filled by the who query)
-	f.subtitle = S:FontString(f, 9, nil, S.media.font, nil, "LEFT")
-	f.subtitle:SetPoint("TOPLEFT", 10, -20)
-	f.subtitle:SetTextColor(0.55, 0.60, 0.55)
-
 	f.close = CreateFrame("Button", nil, f)
 	f.close:SetSize(16, 16)
 	f.close:SetPoint("TOPRIGHT", -7, -6)
+	-- the header drag button covers this area: raise the close button above
+	-- it and register clicks explicitly, otherwise OnClick never fires
+	f.close:SetFrameLevel(f:GetFrameLevel() + 10)
+	f.close:RegisterForClicks("LeftButtonUp")
 	S:CreateBackdrop(f.close, "Default")
 	f.close.fs = S:FontString(f.close, 12, "OUTLINE", S.media.numberFont, nil, "CENTER")
 	f.close.fs:SetPoint("CENTER")
 	f.close.fs:SetText("x")
 	f.close:SetScript("OnClick", function() f:Hide() end)
 
-	-- action buttons: invite / add friend / who
+	-- action buttons work on the ACTIVE conversation
 	local function ActionBtn(label, tip, onClick)
 		local b = CreateFrame("Button", nil, f)
 		b:SetSize(16, 16)
+		b:SetFrameLevel(f:GetFrameLevel() + 10)
+		b:RegisterForClicks("LeftButtonUp")
 		S:CreateBackdrop(b, "Default")
 		b.fs = S:FontString(b, 10, "OUTLINE", S.media.numberFont, nil, "CENTER")
 		b.fs:SetPoint("CENTER")
 		b.fs:SetText(label)
-		b:SetScript("OnClick", function() S:SafeCall("Messenger:Action", onClick) end)
+		b:SetScript("OnClick", function() if activeConv then S:SafeCall("Messenger:Action", onClick) end end)
 		b:SetScript("OnEnter", function(bb)
 			GameTooltip:SetOwner(bb, "ANCHOR_BOTTOM")
 			GameTooltip:SetText(tip)
@@ -361,40 +496,89 @@ local function BuildWindow(c)
 	end
 	f.btnInvite = ActionBtn("E", L["Invite to group"], function()
 		local inv = C_PartyInfo and C_PartyInfo.InviteUnit or InviteUnit
-		if inv then inv(c.target) end
+		if inv and activeConv then inv(activeConv.target) end
 	end)
 	f.btnFriend = ActionBtn("F", L["Add friend"], function()
 		local add = C_FriendList and C_FriendList.AddFriend or AddFriend
-		if add then add(c.target) end
+		if add and activeConv then add(activeConv.target) end
 	end)
-	f.btnWho = ActionBtn("?", L["Who"], function() RefreshTitle(c) end)
+	f.btnWho = ActionBtn("?", L["Who"], function() if activeConv then RefreshTitle(activeConv) end end)
 	f.btnIgnore = ActionBtn("I", IGNORE or "Ignore", function()
 		local ig = C_FriendList and C_FriendList.AddIgnore or AddIgnore
-		if ig then ig(c.target) end
+		if ig and activeConv then ig(activeConv.target) end
 	end)
-	f.btnLog = ActionBtn("L", L["Chat Logs"] or "Chat Logs", function() MS:OpenHistory(c.key) end)
+	f.btnLog = ActionBtn("L", L["Chat Logs"] or "Chat Logs", function() if activeConv then MS:OpenHistory(activeConv.key) end end)
 	f.btnInvite:SetPoint("RIGHT", f.close, "LEFT", -5, 0)
 	f.btnFriend:SetPoint("RIGHT", f.btnInvite, "LEFT", -4, 0)
 	f.btnIgnore:SetPoint("RIGHT", f.btnFriend, "LEFT", -4, 0)
 	f.btnWho:SetPoint("RIGHT", f.btnIgnore, "LEFT", -4, 0)
 	f.btnLog:SetPoint("RIGHT", f.btnWho, "LEFT", -4, 0)
 
-	local chatBox = CreateFrame("Frame", nil, f)
-	chatBox:SetPoint("TOPLEFT", 8, -36)
-	chatBox:SetPoint("BOTTOMRIGHT", -8, 36)
+	-- tab strip under the header
+	f.tabBar = CreateFrame("Frame", nil, f)
+	f.tabBar:SetPoint("TOPLEFT", 6, -32)
+	f.tabBar:SetPoint("TOPRIGHT", -6, -32)
+	f.tabBar:SetHeight(TAB_H + 2)
+
+	-- resize grip, bottom right (Blizzard chat grip look)
+	f.grip = CreateFrame("Button", nil, f)
+	f.grip:SetSize(16, 16)
+	f.grip:SetPoint("BOTTOMRIGHT", -2, 2)
+	local gt = f.grip:CreateTexture(nil, "OVERLAY")
+	gt:SetAllPoints()
+	gt:SetTexture([[Interface\ChatFrame\UI-ChatIM-SizeGrabber-Down]])
+	f.grip:SetScript("OnMouseDown", function() f:StartSizing("BOTTOMRIGHT") end)
+	f.grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() SaveGeom(f) ResizePages() end)
+
+	f:SetScript("OnSizeChanged", function() ResizePages() end)
+	f:SetScript("OnShow", function()
+		local c = activeConv or lastConv
+		if not c then
+			for _, v in ipairs(ConvList()) do c = v break end
+		end
+		if c then ActivateTab(c) end
+		MS:UpdateBadge()
+	end)
+	f:Hide()
+	tinsert(UISpecialFrames, "SentinelUIMessenger")
+	mainWin = f
+	return f
+end
+
+-- per-conversation page: clipped chat scroll area inside the shared window,
+-- plus the reply editbox (kept on the window because it lives below the page)
+local function EnsurePage(c)
+	EnsureMain()
+	if c.frame then
+		if not c.tab then CreateTab(c) end
+		LayoutTabs()
+		return c.frame
+	end
+	local p = CreateFrame("Frame", nil, mainWin)
+	p:SetPoint("TOPLEFT", 8, -(34 + TAB_H + 6))
+	p:SetPoint("BOTTOMRIGHT", -8, 36)
+	p:Hide()
+
+	local chatBox = CreateFrame("Frame", nil, p)
+	chatBox:SetAllPoints(p)
 	if chatBox.SetClipsChildren then chatBox:SetClipsChildren(true) end
 	chatBox:EnableMouseWheel(true)
 	chatBox:SetScript("OnMouseWheel", function(_, d)
-		SetScroll(f, (f.scrollPos or 0) - d * 60)
+		SetScroll(p, (p.scrollPos or 0) - d * 60)
 	end)
 	local content = CreateFrame("Frame", nil, chatBox)
 	content:SetPoint("TOPLEFT", chatBox, "TOPLEFT")
 	content:SetSize(WIN_W - 16, 8)
-	f.scroll, f.content = chatBox, content
+	p.scroll, p.content = chatBox, content
+	-- shared header widgets live on the window; the page borrows them so
+	-- RefreshTitle can keep writing f.title / f.subtitle / f.btn*
+	p.title, p.subtitle = mainWin.title, mainWin.subtitle
+	p.btnInvite, p.btnFriend, p.btnWho, p.btnIgnore, p.btnLog =
+		mainWin.btnInvite, mainWin.btnFriend, mainWin.btnWho, mainWin.btnIgnore, mainWin.btnLog
 
-	local eb = CreateFrame("EditBox", nil, f)
+	local eb = CreateFrame("EditBox", nil, mainWin)
 	eb:SetPoint("BOTTOMLEFT", 10, 8)
-	eb:SetPoint("BOTTOMRIGHT", -10, 8)
+	eb:SetPoint("BOTTOMRIGHT", -22, 8)
 	eb:SetHeight(20)
 	eb:SetAutoFocus(false)
 	eb:SetMultiLine(false)
@@ -452,16 +636,14 @@ local function BuildWindow(c)
 		if step > 0 then e.histIdx = nil e:SetText(e.draft or "") e.draft = nil end
 		e:SetPropagateKeyboardInput(false)
 	end)
-	f.editbox = eb
+	p.editbox = eb
+	eb:Hide()
 
-	tinsert(UISpecialFrames, "SentinelUIWhisper" .. winCount)
-	f:SetScript("OnShow", function()
-		c.unread = nil
-		SetScroll(f, 1e9)
-		if not MS.db or MS.db.autoFocus ~= false then f.editbox:SetFocus() end
-		MS:UpdateBadge()
-	end)
-	return f
+	CreateTab(c)
+	c.frame = p
+	LayoutTabs()
+	UpdateTabs()
+	return p
 end
 
 -- guild/level/class via unit API when the partner is in our party/raid
@@ -487,6 +669,9 @@ RefreshTitle = function(c)
 	local f = c.frame
 	if not f then return end
 	FillFromUnits(c)
+	-- the header belongs to the window, so only the active conversation may
+	-- paint it; other conversations still get their tab label refreshed
+	if c ~= activeConv then UpdateTabs() return end
 	local cc = c.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[c.class]
 	if f.btnInvite then
 		f.btnInvite:SetShown(not c.bnet)
@@ -516,17 +701,42 @@ RefreshTitle = function(c)
 			f.subtitle:SetText(table.concat(bits, "  ·  "))
 		end
 	end
+	UpdateTabs()
 end
 
-local function ShowConv(c)
-	local f = BuildWindow(c)
-	if not f._loaded then
-		f._loaded = true
-		for _, l in ipairs(c.lines) do AddBubble(c, l) end
-		SetScroll(f, 1e9)
+ActivateTab = function(c)
+	activeConv = c
+	lastConv = c
+	for _, conv in pairs(convs) do
+		if conv.frame then
+			conv.frame:Hide()
+			if conv.frame.editbox then conv.frame.editbox:Hide() end
+		end
 	end
+	local p = c.frame
+	if not p._loaded then
+		p._loaded = true
+		for _, l in ipairs(c.lines) do AddBubble(c, l) end
+	end
+	p:Show()
+	if p.editbox then p.editbox:Show() end
 	RefreshTitle(c)
-	f:Show()
+	c.unread = nil
+	SetScroll(p, 1e9)
+	UpdateTabs()
+	MS:UpdateBadge()
+	if not MS.db or MS.db.autoFocus ~= false then p.editbox:SetFocus() end
+end
+
+local function ShowConv(c, quiet)
+	local p = EnsurePage(c)
+	if quiet and mainWin:IsShown() then
+		-- window already open: don't steal the tab, just flag the unread badge
+		UpdateTabs()
+		return
+	end
+	mainWin:Show()
+	ActivateTab(c)
 end
 
 Append = function(c, text, mine)
@@ -612,12 +822,13 @@ function MS:OnWhisper(event, msg, sender, _, _, _, _, _, _, _, _, guid, bnID)
 		if InCombatLockdown() and (not self.db or self.db.combatSuppress ~= false) then
 			pendingPopups[c] = true
 		else
-			ShowConv(c)
+			ShowConv(c, true)
 		end
 	end
 	if not mine and (not c.frame or not c.frame:IsShown()) then
 		c.unread = (c.unread or 0) + 1
 	end
+	UpdateTabs()
 	self:UpdateBadge()
 end
 
@@ -709,7 +920,7 @@ function MS:ConvMenu(c)
 				SetScroll(c.frame, 0)
 			end
 		end)
-		Item(CLOSE or "Close", function() if c.frame then c.frame:Hide() end end)
+		Item(CLOSE or "Close", function() if mainWin then mainWin:Hide() end end)
 	end, "MENU")
 	ToggleDropDownMenu(1, nil, convActionMenu, "cursor", 0, 0)
 end
@@ -850,6 +1061,8 @@ function MS:ExportLog(key)
 		f:SetSize(400, 340)
 		f:SetPoint("CENTER", UIParent, "CENTER", 140, -20)
 		f:SetFrameStrata("FULLSCREEN_DIALOG")
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		f:SetClampedToScreen(true)
 		f:EnableMouse(true)
 		f:SetMovable(true)
@@ -898,6 +1111,8 @@ function MS:OpenHistory(key)
 		f:SetSize(340, 360)
 		f:SetPoint("CENTER", UIParent, "CENTER", -140, 30)
 		f:SetFrameStrata("DIALOG")
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+		f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		f:SetClampedToScreen(true)
 		f:EnableMouse(true)
 		f:SetMovable(true)

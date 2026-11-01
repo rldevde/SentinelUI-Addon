@@ -220,9 +220,7 @@ local function ResolveIcons(iid)
 	for _, cb in ipairs(cbs) do cb(icon) end
 end
 
-iconWatcher:SetScript("OnEvent", function(_, _, iid)
-	if iid then ResolveIcons(iid) end
-end)
+local pendingPaint = {} -- forward-declared; wired up after PaintItem
 
 local function WarmItem(iid)
 	if Item and Item.CreateFromItemID then
@@ -367,6 +365,60 @@ local function MakeInstRow(i)
 	end
 	return inst
 end
+
+-- paints name/quality/usability of one loot button; re-run whenever the
+-- item record finishes loading so late data cannot leave stale colors
+local function PaintItem(b, eid)
+	if not eid then
+		b.ic:SetTexture(134400)
+		b.ic:SetVertexColor(1, 1, 1)
+		b.nm:SetText("?")
+		b.nm:SetTextColor(1, 1, 1)
+		b.unusable = nil
+		return
+	end
+	local name, link, q, _, reqLvl, _, _, _, equipSlot = GetItemInfo(eid)
+	b.nm:SetText(name or ("#" .. eid))
+	local r, g, bl = 1, 1, 1
+	if q and GetItemQualityColor then
+		local qr, qg, qb = GetItemQualityColor(q)
+		if qr then r, g, bl = qr, qg, qb end
+	elseif q and ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q] then
+		local c = ITEM_QUALITY_COLORS[q]
+		r, g, bl = c.r, c.g, c.b
+	end
+	-- unusable = equipment the player cannot equip: level requirement or
+	-- class/armor/weapon restriction (IsEquippableItem covers both)
+	local unusable = false
+	if equipSlot and equipSlot ~= "" then
+		if (reqLvl or 0) > (UnitLevel and UnitLevel("player") or 80) then
+			unusable = true
+		elseif IsEquippableItem and link and not IsEquippableItem(link) then
+			unusable = true
+		end
+	end
+	b.unusable = unusable
+	if unusable then
+		b.nm:SetTextColor(1, 0.32, 0.32)
+		b.ic:SetVertexColor(1, 0.35, 0.35)
+	else
+		b.nm:SetTextColor(r, g, bl)
+		b.ic:SetVertexColor(1, 1, 1)
+	end
+end
+
+-- late-loading records: repaint waiting buttons when the item arrives
+iconWatcher:HookScript("OnEvent", function(_, _, iid)
+	if not iid then return end
+	ResolveIcons(iid)
+	local lst = pendingPaint[iid]
+	if lst then
+		pendingPaint[iid] = nil
+		for _, b in ipairs(lst) do
+			if b:IsShown() and b.eid == iid then PaintItem(b, iid) end
+		end
+	end
+end)
 
 local function MakeItemBtn(col, row)
 	local b = F.itemBtns[(row - 1) * COLS + col]
@@ -582,29 +634,27 @@ function LB:RefreshItems()
 				b.eid = e.id
 				b.price = e.price and PriceText(e.price)
 				b.drop = e.id and DropChance(inst, boss, e.id)
-				b.nm:SetText(e.id and (GetItemInfo(e.id) or ("#" .. e.id)) or "?")
+				PaintItem(b, e.id)
 				if e.id then
-					local nm = GetItemInfo(e.id)
-					if not nm then
+					if not GetItemInfo(e.id) then
+						-- register for the event AND poll: whichever resolves
+						-- first repaints the button fully
+						pendingPaint[e.id] = pendingPaint[e.id] or {}
+						tinsert(pendingPaint[e.id], b)
 						local btn = b
 						WarmItem(e.id)
-						C_Timer.After(1.2, function()
-							local nm2 = GetItemInfo(e.id)
-							if nm2 and btn:IsShown() then btn.nm:SetText(nm2) end
-						end)
+						for _, delay in ipairs({ 1.2, 4, 10 }) do
+							C_Timer.After(delay, function()
+								if btn:IsShown() and btn.eid == e.id then PaintItem(btn, e.id) end
+							end)
+						end
 					end
-					ItemIcon(e.id, function(t) if b:IsShown() and b.eid == e.id then b.ic:SetTexture(t) end end)
-					-- quality color on the name
-					local _, _, q = GetItemInfo(e.id)
-					if q then
-						local c = ITEM_QUALITY_COLORS and ITEM_QUALITY_COLORS[q]
-						if c then b.nm:SetTextColor(c.r, c.g, c.b) end
-					else
-						b.nm:SetTextColor(1, 1, 1)
-					end
-				else
-					b.ic:SetTexture(134400)
-					b.nm:SetTextColor(1, 1, 1)
+					ItemIcon(e.id, function(t)
+						if b:IsShown() and b.eid == e.id then
+							b.ic:SetTexture(t)
+							if b.unusable then b.ic:SetVertexColor(1, 0.35, 0.35) end
+						end
+					end)
 				end
 				b.sub:SetText(e.amount and format("x%d", e.amount) or (e.price and b.price) or "")
 				b:Show()
@@ -690,6 +740,8 @@ function LB:CreateBrowser()
 	F:SetSize(780, 560)
 	F:SetPoint("CENTER")
 	F:SetFrameStrata("DIALOG")
+	F:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	F:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	F:EnableMouse(true)
 	F:SetMovable(true)
 	F:RegisterForDrag("LeftButton")
@@ -742,9 +794,9 @@ function LB:CreateBrowser()
 	-- left: instance list in a scroll frame
 	F.instScroll = CreateFrame("ScrollFrame", "SentinelUILootInstScroll", F, "UIPanelScrollFrameTemplate")
 	F.instScroll:SetPoint("TOPLEFT", 12, -86)
-	F.instScroll:SetSize(244, F:GetHeight() - 100)
+	F.instScroll:SetSize(224, F:GetHeight() - 100)
 	F.instContent = CreateFrame("Frame", nil, F.instScroll)
-	F.instContent:SetSize(224, 1)
+	F.instContent:SetSize(206, 1)
 	F.instScroll:SetScrollChild(F.instContent)
 	if F.instScroll.ScrollBar then S:SkinScrollBar(F.instScroll.ScrollBar) end
 	F.instRows = {}
@@ -770,6 +822,7 @@ function LB:CreateBrowser()
 	F.itemArea = CreateFrame("Frame", nil, F, S.BackdropTemplate)
 	F.itemArea:SetPoint("TOPLEFT", 258, -182)
 	F.itemArea:SetSize(COLS * 254 + 8, ROWS * (BTN_H + 1) + 8)
+	F.itemArea:SetClipsChildren(true)
 	S:CreateBackdrop(F.itemArea, "Transparent")
 	F.itemBtns = {}
 	F.headRows = {}

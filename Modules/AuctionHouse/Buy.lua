@@ -141,6 +141,7 @@ function buy:Build(pf)
 	newBtn:SetSize(80, 18); newBtn:SetPoint("TOPLEFT", 6, -22 - 5 * 20 - 4)
 	newBtn:SetText("+ " .. L["New List"])
 	if S.SkinButton then S:SkinButton(newBtn) end
+	newBtn:RegisterForClicks("AnyUp")
 	newBtn:SetScript("OnClick", function()
 		StaticPopup_Show("SUI_AH_NEW_LIST")
 	end)
@@ -148,6 +149,7 @@ function buy:Build(pf)
 	delBtn:SetSize(80, 18); delBtn:SetPoint("LEFT", newBtn, "RIGHT", 4, 0)
 	delBtn:SetText(L["Delete"])
 	if S.SkinButton then S:SkinButton(delBtn) end
+	delBtn:RegisterForClicks("AnyUp")
 	delBtn:SetScript("OnClick", function()
 		local st = S.db.global.ahShopping
 		AH.shopping:DeleteList(st and st.current or 1)
@@ -169,6 +171,7 @@ function buy:Build(pf)
 		r.fs:SetWordWrap(false)
 		r.del = S:FontString(r, 9, nil, S.media.unitFont)
 		r.del:SetPoint("RIGHT", -4, 0); r.del:SetText("|cffff5555x|r")
+		r:RegisterForClicks("AnyUp")
 		r:SetScript("OnClick", function(_, btn)
 			if btn == "RightButton" then
 				AH.shopping:RemoveItem(i + (left.iOffset or 0))

@@ -134,6 +134,44 @@ function S.GetMouseFocus()
 	if GetMouseFocus then return GetMouseFocus() end
 end
 
+-- Talent points spent in one tree. TBC Anniversary returns
+-- (tabID, name, icon) from GetTalentTabInfo with no point count at all,
+-- so the real total is summed from GetTalentInfo ranks; other clients can
+-- fall back to the points field of either return shape.
+local function TabPointsFromReturns(tabIndex, isInspect)
+	if not GetTalentTabInfo then return 0 end
+	-- scan every numeric return for a plausible point count: Era carries it
+	-- at index 3, modern clients at index 5, and this client's hybrid shape
+	-- (tabID, name, icon, ...) may keep it at 4 or later. Icon/background
+	-- fileIDs are always far above the 71-point maximum, so the first small
+	-- integral field after index 2 is the spend count.
+	for i = 3, 8 do
+		local v = tonumber((select(i, GetTalentTabInfo(tabIndex, isInspect))))
+		if v and v >= 0 and v <= 71 and v % 1 == 0 then return v end
+	end
+	return 0
+end
+
+function S.GetTalentTabPoints(tabIndex, isInspect)
+	-- cheap path first: the tab-info returns already carry the count on
+	-- every client that still reports it
+	local pts = TabPointsFromReturns(tabIndex, isInspect)
+	if pts > 0 then return pts end
+	-- TBC Anniversary reports no point field at all: sum the real ranks
+	if GetTalentInfo and GetNumTalents then
+		local total = 0
+		local ok, n = pcall(GetNumTalents, tabIndex, isInspect)
+		if ok and n then
+			for i = 1, n do
+				local ok2, _, _, _, _, rank = pcall(GetTalentInfo, tabIndex, i, isInspect)
+				if ok2 then total = total + (tonumber(rank) or 0) end
+			end
+		end
+		return total
+	end
+	return 0
+end
+
 -- Specialization / talents
 function S.GetSpecName()
 	if GetSpecialization and GetSpecializationInfo then
@@ -143,10 +181,9 @@ function S.GetSpecName()
 	if GetTalentTabInfo then
 		local best, bestName = -1, nil
 		for i = 1, (GetNumTalentTabs and GetNumTalentTabs() or 3) do
-			local r1, r2, r3, r4, r5 = GetTalentTabInfo(i)
-			-- Classic returns (name, icon, points, ...) / later (id, name, desc, icon, points)
-			local name, points
-			if type(r1) == "number" and type(r2) == "string" then name, points = r2, r5 else name, points = r1, r3 end
+			local _, name = GetTalentTabInfo(i)
+			if type(name) ~= "string" then name = GetTalentTabInfo(i) end
+			local points = S.GetTalentTabPoints(i)
 			if type(points) == "number" and points > best then best, bestName = points, name end
 		end
 		return bestName

@@ -163,12 +163,12 @@ function BG:GetPlayerSpec()
 	if GetTalentTabInfo then
 		local bestTab, bestPts
 		for t = 1, tonumber(GetNumTalentTabs and GetNumTalentTabs() or 3) or 3 do
-			local name, _, pts = GetTalentTabInfo(t)
-			pts = tonumber(pts) or 0
+			local pts = S.GetTalentTabPoints(t)
 			if pts > (bestPts or 0) then bestTab, bestPts = t, pts end
 		end
 		if bestTab and (bestPts or 0) > 0 then
-			local tname = GetTalentTabInfo(bestTab)
+			local _, tname = GetTalentTabInfo(bestTab)
+			if type(tname) ~= "string" then tname = GetTalentTabInfo(bestTab) end
 			local si = self:TreeToSpec(ci, tname)
 			if si then return si end
 		end
@@ -449,6 +449,8 @@ function BG:CreateBrowser()
 	B:SetSize(600, 520)
 	B:SetPoint("CENTER")
 	B:SetFrameStrata("DIALOG")
+	B:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	B:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	B:EnableMouse(true)
 	B:SetMovable(true)
 	B:RegisterForDrag("LeftButton")
@@ -838,11 +840,10 @@ function BG:DetectInspectedSpec(unit, ci)
 	if not (GetTalentTabInfo and GetNumTalentTabs) then return 1 end
 	local bestTab, bestPts
 	for t = 1, GetNumTalentTabs() do
-		local name, _, pts
-		local ok = pcall(function()
-			name, _, pts = GetTalentTabInfo(t, true)
-		end)
+		local ok, pts = pcall(S.GetTalentTabPoints, t, true)
 		if ok and pts and (not bestPts or pts > bestPts) then
+			local _, name = GetTalentTabInfo(t, true)
+			if type(name) ~= "string" then name = select(1, GetTalentTabInfo(t, true)) end
 			bestTab, bestPts = name, pts
 		end
 	end

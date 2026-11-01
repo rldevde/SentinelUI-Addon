@@ -184,6 +184,7 @@ function S:ShowInstall()
 		frame:SetSize(600, 400)
 		frame:SetPoint("CENTER")
 		frame:SetFrameStrata("DIALOG")
+		frame:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		frame:EnableMouse(true)
 		frame:SetMovable(true)
 		frame:RegisterForDrag("LeftButton")

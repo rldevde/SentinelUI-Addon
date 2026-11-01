@@ -458,6 +458,8 @@ function TR:BuildFrame()
 	f:SetSize(340, 470)
 	f:SetPoint("CENTER", UIParent, "CENTER", 180, 40)
 	f:SetFrameStrata("DIALOG")
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
+	f:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	f:SetClampedToScreen(true)
 	f:EnableMouse(true)
 	f:SetMovable(true)

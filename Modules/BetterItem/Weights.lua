@@ -737,13 +737,29 @@ end
 
 -- Helper: GetTabPoints (handles API variations between clients)
 local function GetTabPoints(tabIndex, isInspect)
-    if not GetTalentTabInfo then return 0 end
-    local t1, t2, t3, t4, t5 = GetTalentTabInfo(tabIndex, isInspect)
-    if type(t1) == "number" then
-        return tonumber(t5) or 0
-    else
-        return tonumber(t3) or 0
+    -- scan every numeric return for a plausible point count first (one API
+    -- call): Era index 3, modern index 5, this client's hybrid shape may
+    -- keep it at 4+. Icon/background fileIDs are always far above the
+    -- 71-point maximum, so the first small integral field wins.
+    if GetTalentTabInfo then
+        for i = 3, 8 do
+            local v = tonumber((select(i, GetTalentTabInfo(tabIndex, isInspect))))
+            if v and v >= 0 and v <= 71 and v % 1 == 0 then return v end
+        end
     end
+    -- this client reports no point field: sum the real talent ranks
+    if GetTalentInfo and GetNumTalents then
+        local total = 0
+        local ok, n = pcall(GetNumTalents, tabIndex, isInspect)
+        if ok and n then
+            for i = 1, n do
+                local ok2, _, _, _, _, rank = pcall(GetTalentInfo, tabIndex, i, isInspect)
+                if ok2 then total = total + (tonumber(rank) or 0) end
+            end
+        end
+        return total
+    end
+    return 0
 end
 
 -- total score of the equipped gear under one scale — used to resolve

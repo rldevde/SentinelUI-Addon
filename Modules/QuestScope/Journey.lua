@@ -443,6 +443,7 @@ local function CreateJourney()
 	J:SetSize(880, 430)
 	J:SetPoint("CENTER")
 	J:SetFrameStrata("DIALOG")
+	J:SetToplevel(true)  -- newest/clicked window rises inside its strata
 	J:SetClampedToScreen(true)
 	J:EnableMouse(true)
 	J:SetMovable(true)

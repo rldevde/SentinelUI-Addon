@@ -137,6 +137,7 @@ function AH:TextDialog(title, text, okLabel, onAccept)
 		d:SetSize(320, 240)
 		d:SetPoint("CENTER")
 		d:SetFrameStrata("DIALOG")
+		d:SetToplevel(true)  -- newest/clicked window rises inside its strata
 		d:SetMovable(true)
 		d:EnableMouse(true)
 		d:RegisterForDrag("LeftButton")
