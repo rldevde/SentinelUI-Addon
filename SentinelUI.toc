@@ -50,7 +50,6 @@ Modules\AFK.lua
 Modules\Skins.lua
 Modules\Inspect.lua
 Modules\WindowMover.lua
-Modules\Navigation.lua
 Modules\DamageMeter.lua
 Modules\SeeLast.lua
 Modules\WorldMap.xml
@@ -95,6 +94,7 @@ Modules\Reputation.lua
 Modules\ItemSync.lua
 Modules\BugFolder.lua
 Modules\Messenger.lua
+Modules\Waypoints.lua
 Modules\Announcer.lua
 Modules\InterruptAlert.lua
 Modules\HealerProtection.lua
@@ -102,22 +102,6 @@ Modules\Blessings.lua
 Modules\RaidCheck.lua
 Modules\RaidGrid.lua
 Modules\MageBar.lua
-Modules\QuestScope.lua
-Modules\QuestScope\Tracker.lua
-Modules\QuestScope\Journey.lua
-Modules\QuestScope\QuestieCompat.lua
-Modules\QuestScope\ZoneMap_Vanilla.lua
-Modules\QuestScope\Data_Vanilla.lua
-Modules\QuestScope\ZoneMap_TBC.lua
-Modules\QuestScope\Data_TBC.lua
-Modules\QuestScope\ZoneMap_Wrath.lua
-Modules\QuestScope\Data_Wrath.lua
-Modules\QuestScope\ZoneMap_Cata.lua
-Modules\QuestScope\Data_Cata.lua
-Modules\QuestScope\ZoneMap_Mists.lua
-Modules\QuestScope\Data_Mists.lua
-Modules\QuestScope\ZoneMap_Forever.lua
-Modules\QuestScope\Data_Forever.lua
 
 Modules\BisGuide\Data_Bis.lua
 Modules\BisGuide\Data_Rotation.lua
@@ -146,7 +130,6 @@ Modules\ConfigShare.lua
 Modules\QuestAnnounce.lua
 Modules\CharStats.lua
 Modules\InfoTrackers.lua
-Modules\CharPanel.lua
 Modules\WildBuffs.lua
 Modules\Preview.lua
 Modules\WarLogs.lua

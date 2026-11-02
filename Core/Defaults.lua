@@ -56,6 +56,11 @@ S.defaults = {
 		warlogs = { enable = true },
 		preview = { enable = true },
 		wildbuffs = { enable = true },
+		waypoints = {
+			enable = true, arrowScale = 1, arrowAlpha = 1,
+			showETA = true, setclosest = true, arrival = 15, corpse = true,
+			minimapPins = true, worldmapClick = true,
+		},
 		charstats = { enable = true },
 		questannounce = { enable = true },
 		markedtargets = { enable = true },
@@ -234,7 +239,6 @@ S.defaults = {
 			hyperlinkHover = true, throttle = 0,
 			stickyChat = true, history = true, historySize = 100,
 		},
-		charpanel = { enable = false },
 		datatexts = {
 			fontSize = 12, panelHeight = 22, panelTransparency = true, dock = true,
 			font = "Sentinel Sans", fontOutline = "NONE", textColor = { r = 0.92, g = 0.92, b = 0.95 },
@@ -287,14 +291,7 @@ S.defaults = {
 				},
 			},
 		},
-		navigation = {
-			enable = true, arrowSize = 56, arrowAlpha = 1, arrival = 15,
-			showDistance = true, showETA = true, corpseArrow = true, autoQueue = true,
-			minimapPin = true, worldmapPin = true, clickCreate = true, createModifier = "CTRL", pingOnArrive = true,
-			goodColor = { r = 0.2, g = 0.95, b = 0.3 }, midColor = { r = 1, g = 0.9, b = 0.1 },
-			badColor = { r = 0.95, g = 0.2, b = 0.15 }, exactColor = { r = 0.3, g = 0.9, b = 1 },
-			pinSize = 16, pinAlpha = 1, mapCoords = true,
-		},
+
 		damagemeter = {
 			enable = true, width = 250, barHeight = 16, spacing = 1, maxBars = 8,
 			fontSize = 11, classColor = true, showPercent = true, showPerSecond = true,

@@ -558,30 +558,43 @@ DT:Register("Layer", {
 	interval = 2,
 	events = { "PLAYER_TARGET_CHANGED", "UPDATE_MOUSEOVER_UNIT", "NAME_PLATE_UNIT_ADDED", "GROUP_JOINED", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" },
 	update = function(slot)
-		local num
-		-- self-contained: the shard is embedded in creature guids as
-		-- instID:zoneID; assign each distinct key a stable small number
+		-- self-contained: the shard lives in the guid fields
+		-- serverID:instanceUID (type-flags-SERVER-SHARD-zone-npc-spawn).
+		-- zone is deliberately NOT part of the key: two mobs on one shard
+		-- near a border can carry different zone ids. The layer is also
+		-- STICKY - anything we can see is on our shard, so once we know
+		-- it we keep it until the zone changes or we join a group.
 		DT.shardIDs = DT.shardIDs or {}
 		local function ShardIdx()
 			for _, u in ipairs({ "target", "mouseover", "focus", "npc" }) do
 				local g = UnitGUID and UnitGUID(u)
 				if type(g) == "string" then
-					-- any guid containing a non-player unit type; the shard
-					-- lives in the numeric middle fields whatever they are
-					local utype, a, b, c, d = g:match("([^-]+)-([^-]+)-([^-]+)-([^-]+)-([^-]+)")
-					if utype and utype ~= "Player" and utype ~= "Item" then
-						local key = table.concat({ a or "0", b or "0", c or "0", d or "0" }, ":")
+					local utype, _, server, shard = g:match("([^-]+)-([^-]+)-([^-]+)-([^-]+)")
+					if utype and utype ~= "Player" and utype ~= "Item" and (tonumber(shard) or 0) > 0 then
+						local key = tostring(server) .. ":" .. tostring(shard)
 						if not DT.shardIDs[key] then
 							local n = 0
 							for _ in pairs(DT.shardIDs) do n = n + 1 end
 							DT.shardIDs[key] = n + 1
 						end
-						return DT.shardIDs[key]
+						return key, DT.shardIDs[key]
 					end
 				end
 			end
 		end
-		num = ShardIdx()
+		local zt = (GetRealZoneText and GetRealZoneText()) or (GetZoneText and GetZoneText()) or ""
+		if zt ~= DT.layerZone then DT.layerZone = zt DT.myLayer = nil end
+		if not DT.myLayer then
+			local key, idx = ShardIdx()
+			if key then DT.myLayer = key end
+			if not DT.myLayer then
+				local it = S:GetModule("InstanceTracker", true)
+				local n2 = it and it.CurrentLayer and it:CurrentLayer()
+				idx = idx or (n2 and n2 > 0 and n2 or nil)
+			end
+			DT.myIdx = idx
+		end
+		local num = DT.myIdx
 		if not num then
 			local it = S:GetModule("InstanceTracker", true)
 			num = it and it.CurrentLayer and it:CurrentLayer()
@@ -633,14 +646,75 @@ DT:Register("Layer", {
 	end,
 })
 
+-- GetInboxNumItems is only meaningful while/recently after the mailbox
+-- is open. HasNewMail() is a server flag that stays true for minutes
+-- after you collected everything, so we keep a remembered inbox state:
+-- every real reading refreshes it, UPDATE_PENDING_MAIL invalidates it,
+-- and while the box is closed we trust the memory over the flag.
+local mailSeen
+
+local function ReadInbox()
+	local n = GetInboxNumItems and GetInboxNumItems() or 0
+	local unread = 0
+	for i = 1, n do
+		local wasRead = select(9, GetInboxHeaderInfo(i))
+		if wasRead == false then unread = unread + 1 end
+	end
+	return unread, n
+end
+
+local mailWatch = CreateFrame("Frame")
+mailWatch:RegisterEvent("MAIL_INBOX_UPDATE")
+mailWatch:RegisterEvent("MAIL_CLOSED")
+mailWatch:RegisterEvent("UPDATE_PENDING_MAIL")
+mailWatch:RegisterEvent("MAIL_SHOW")
+mailWatch:SetScript("OnEvent", function(_, ev)
+	if ev == "UPDATE_PENDING_MAIL" then
+		mailSeen = nil -- server says state changed: forget memory
+	else
+		local unread, n = ReadInbox()
+		mailSeen = { unread = unread, n = n }
+	end
+	if DT and DT.Update then DT:Update("Mail") end
+end)
+
+local function UnreadMail()
+	local unread, n = ReadInbox()
+	if n == 0 and mailSeen then return mailSeen.unread, mailSeen.n end
+	if n == 0 then
+		-- never opened this session: pending-flag signals only
+		if HasNewMail and HasNewMail() then return 1, 1 end
+		if GetLatestThreeSenders and (GetLatestThreeSenders()) then return 1, 1 end
+		local mailIcon = MiniMapMailIcon or (MiniMapMailFrame and MiniMapMailFrame.MailIcon)
+		if mailIcon and mailIcon.IsShown and mailIcon:IsShown() then return 1, 1 end
+	end
+	return unread, n
+end
+
 DT:Register("Mail", {
+	interval = 10,
 	events = { "UPDATE_PENDING_MAIL", "MAIL_INBOX_UPDATE", "PLAYER_ENTERING_WORLD", "MAIL_CLOSED" },
-	update = function(slot) slot.text:SetText(HasNewMail() and ("|cff40ff40" .. L["New Mail"] .. "|r") or ("|cffaaaaaa" .. L["No Mail"] .. "|r")) end,
+	update = function(slot)
+		local unread, n = UnreadMail()
+		if unread > 0 then
+			slot.text:SetText(("|cff40ff40%s (%d)|r"):format(L["New Mail"], unread))
+		elseif n > 0 then
+			slot.text:SetText(("|cffffff00%s (%d)|r"):format(L["Mail"], n))
+		else
+			slot.text:SetText("|cffaaaaaa" .. L["No Mail"] .. "|r")
+		end
+	end,
 	enter = function(slot)
-		if not HasNewMail() then return end
+		local unread, n = UnreadMail()
+		if n == 0 then return end
 		local tt = DT:Tooltip(slot)
 		tt:AddLine(HAVE_MAIL_FROM or L["New Mail"], S.accent.r, S.accent.g, S.accent.b)
-		for _, sender in ipairs({ GetLatestThreeSenders() }) do tt:AddLine(sender, 1, 1, 1) end
+		local n2 = math.min(n, 5)
+		for i = 1, n2 do
+			local _, _, sender, subject, _, _, _, _, wasRead = GetInboxHeaderInfo(i)
+			local pre = wasRead == false and "|cff40ff40" or "|cffaaaaaa"
+			tt:AddDoubleLine(pre .. tostring(subject or "?") .. "|r", "|cff888888" .. tostring(sender or "?") .. "|r")
+		end
 		tt:Show()
 	end,
 })

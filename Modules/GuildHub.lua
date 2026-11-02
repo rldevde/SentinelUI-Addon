@@ -578,8 +578,7 @@ appliers.CTA = function(rest, sender)        -- call to arms
 	if not inInst and p and p.settings.ctaPin ~= false then
 		local nx, ny = tonumber(x), tonumber(y)
 		if nx and ny and nx > 0 then
-			local nav = S.GetModule and S:GetModule("Navigation")
-			if nav and nav.SetUserWaypoint then pcall(nav.SetUserWaypoint, nav, zone, nx, ny, "CTA: " .. sender) end
+
 		end
 	end
 end

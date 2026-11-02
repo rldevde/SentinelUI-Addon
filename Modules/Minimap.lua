@@ -390,7 +390,6 @@ function MM:CreateMenuButton()
 		{ L["Raid Check"], "RaidCheck", "Toggle" },
 		{ L["Heal Grid"], "RaidGrid", "Toggle" },
 		{ L["Totem Forge"], "TotemForge", "Toggle" },
-		{ L["Quest Scope"], "QuestScope", nil, function() S:ToggleConfig("questscope") end },
 		{ L["Boss Watch"], "BossWatch", "ToggleSettings" },
 		{ L["Interrupt Alert"], "InterruptAlert", nil, function() S:ToggleConfig("interruptalert") end },
 		{ L["Healer Protection"], "HealerProtection", nil, function() S:ToggleConfig("healerprot") end },

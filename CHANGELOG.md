@@ -10,15 +10,22 @@ standalone RLBetterItem release.
 ## [1.5.1] - 2026-11-01
 
 ### Added
+- **Waypoints module** (`/way`, `/cway`, `/waylist`, `/wayresetall`): TomTom-style waypoint queue with crazy arrow (rotating pointer, distance, ETA), minimap pins, corpse arrow, ctrl-rightclick on the world map to drop a waypoint, and a TomTom-compatible API facade so Questie/other addons can feed waypoints when the real TomTom is not loaded
+- **Tracker history database** (`SentinelUITrackerDB`): kills/loot/auction datatexts now show session, last-session and lifetime totals; a session rolls over on real login only (survives `/reload`)
+### Added
 - **InfoTrackers: new datatexts for the bottom bar** (modular, assignable like any other datatext): **Auctions** (running auctions + session gold, tooltip with counts, click opens the AH; a sold auction pops a toast + chat line with item and price), **Kills** (session kill counter) and **Loot** (items + gold looted + total vendor value of looted items)
 - **CharPanel: standalone character window** (disabled by default, opens via `/suichar`): own layout with slot columns showing quality-colored item names + `iLvl · GS`, character model, grouped stat sections (Attributes/Combat/Spells/Defense), bottom weapon row, own tabs for Character/Reputation/Skills/PvP rendered inside the window, BetterItem outfit button and active-scale display
 
 ### Changed
+- **Removed modules**: the custom CharPanel experiment (restored the Blizzard frame + movable stats panel), QuestScope, and the old Navigation module (superseded by the new Waypoints module)
 - **Call to Arms moved into the bottom datatext bar**: the horn icon now sits in the LeftChat panel next to Gold and Durability as a real datatext (click to broadcast, tooltip shows the cooldown left) instead of a ButtonBars icon; the 'Show the Call to Arms button' setting adds/removes it there and the old icon is retired from the button bar
 - **Messenger is one tabbed window now**: every whisper/BNet conversation is a tab on a single window instead of a separate frame per contact. Left-click a tab to open it, right-click for the contact menu, middle-click closes the tab. The window drags by its header band, resizes from the bottom-right grip (chat rows rewrap to the new width) and remembers position and size. Incoming whispers while the window is open mark their tab with an unread counter instead of stealing the active conversation; header, action buttons and subtitle act on the active tab. History, bubbles, smileys, links, the reply box with input history and the log viewer are unchanged
 
 ### Fixed
-- **Layer datatext stuck on '?'**: four real bugs in the chain - creature guids with `zoneID == 0` were discarded before the shard id was read (open-world guids on this client often carry 0), the 20-entry layer table blocked `currentLayerID` once full (now evicts the oldest), `LayerNum` crashed sorting mixed old-numeric/new-string keys (normalized), and the datatext now detects the shard self-contained from any nearby creature guid as fallback
+- **Mail datatext**: `GetInboxNumItems` only reports near an open mailbox and `HasNewMail` lags for minutes after collecting; the datatext now reads the real inbox whenever possible, remembers the last known state after closing, and invalidates it on `UPDATE_PENDING_MAIL`
+- **Layer datatext jumped between values on target change**: the display now uses `serverID:shardUID` only (zone borders no longer flip the reading) and stays sticky until a real zone change
+
+- **Layer datatextr datatext stuck on '?'**: four real bugs in the chain - creature guids with `zoneID == 0` were discarded before the shard id was read (open-world guids on this client often carry 0), the 20-entry layer table blocked `currentLayerID` once full (now evicts the oldest), `LayerNum` crashed sorting mixed old-numeric/new-string keys (normalized), and the datatext now detects the shard self-contained from any nearby creature guid as fallback
 - **Loot browser items not displaying at all**: buttons waiting on late item data only retried once and never repainted name/quality/usability together - they now register for `GET_ITEM_INFO_RECEIVED` and poll at 1.2/4/10 s, so raid loot (e.g. T4 tokens) fills in once the client has it
 - **Unit frames occasionally built as health bar only**: a nil unit config during `BuildFrame` (login/group-join race) killed the build mid-way; `f.db` now falls back to `{}` and the font lookups are nil-safe
 - **TalentAtlas missing ~250 German strings**: recommendations, racials, reagents, cap texts, utility spell names and class/spec tokens translated in `Locales/deDE_TalentAtlas.lua`; new tracker/tab strings added to `deDE.lua`

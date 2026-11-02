@@ -1,0 +1,30 @@
+name: Bug report
+description: Something is broken
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: SentinelUI version
+      placeholder: "e.g. 1.5.1"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what happened, what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: Lua errors
+      description: Paste any Lua error text here
+      render: text
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshots
+      description: Drag a screenshot here if it helps
