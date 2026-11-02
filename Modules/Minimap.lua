@@ -386,23 +386,25 @@ function MM:CreateMenuButton()
 			if w then w.hidden = not w.hidden w.frame:SetShown(not w.hidden) end
 		end },
 		{ L["Announcer"], "Announcer", "ToggleWindow" },
-		{ L["Blessings"], "Blessings", "ToggleGrid" },
+		{ L["Blessings"], "Blessings", "ToggleGrid", nil, { PALADIN = true } },
 		{ L["Raid Check"], "RaidCheck", "Toggle" },
 		{ L["Heal Grid"], "RaidGrid", "Toggle" },
-		{ L["Totem Forge"], "TotemForge", "Toggle" },
+		{ L["Totem Forge"], "TotemForge", "Toggle", nil, { SHAMAN = true } },
 		{ L["Boss Watch"], "BossWatch", "ToggleSettings" },
 		{ L["Interrupt Alert"], "InterruptAlert", nil, function() S:ToggleConfig("interruptalert") end },
-		{ L["Healer Protection"], "HealerProtection", nil, function() S:ToggleConfig("healerprot") end },
+		{ L["Healer Protection"], "HealerProtection", nil, function() S:ToggleConfig("healerprot") end, { PRIEST = true, DRUID = true, SHAMAN = true, PALADIN = true } },
 		{ L["Decurse"], "Decurse", nil, function(m)
 			local f = m.frame or (m.BuildFrame and m:BuildFrame())
 			if f then f:SetShown(not f:IsShown()) end
-		end },
+		end, { DRUID = true, MAGE = true, PRIEST = true, PALADIN = true, SHAMAN = true } },
 	}
 	local function RefreshSuiMenu()
 		local n = 0
+		local _, pc = UnitClass("player")
 		for _, e in ipairs(suiEntries) do
 			local m = e[2] and S:GetModule(e[2])
-			if not e[2] or (m and m:IsEnabled()) then
+			local okClass = not e[5] or e[5][pc]
+			if okClass and (not e[2] or (m and m:IsEnabled())) then
 				n = n + 1
 				local b = suiMenu.rows[n]
 				if not b then

@@ -591,7 +591,7 @@ function PB:BuildBuffFrame()
 	f:SetFrameStrata("MEDIUM")
 	S:SetTemplate(f, "Default", "MEDIUM")
 	f:Hide()
-	f:SetScript("OnDragStart", function(fr) if not PB.db.lockFrame then fr:StartMoving() end end)
+	f:SetScript("OnDragStart", function(fr) if not PB.db.lockFrame and not InCombatLockdown() then fr:StartMoving() end end)
 	f:SetScript("OnDragStop", function(fr) fr:StopMovingOrSizing() SaveBarPos(fr) end)
 
 	f.title = S:FontString(f, 9, "OUTLINE")
@@ -607,7 +607,7 @@ function PB:BuildBuffFrame()
 	f.grip:SetPoint("TOPRIGHT", 0, 0)
 	f.grip:SetHeight(14)
 	f.grip:SetScript("OnMouseDown", function(_, btn)
-		if btn == "LeftButton" and not PB.db.lockFrame then f:StartMoving() end
+		if btn == "LeftButton" and not PB.db.lockFrame and not InCombatLockdown() then f:StartMoving() end
 	end)
 	f.grip:SetScript("OnMouseUp", function() f:StopMovingOrSizing() SaveBarPos(f) end)
 

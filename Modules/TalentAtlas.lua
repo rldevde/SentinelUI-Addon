@@ -1069,12 +1069,27 @@ local function DrawTree(ctx, x, ti, td, data, ci, onChange)
 		tex:SetPoint("BOTTOMRIGHT", -2, 2)
 		tex:SetTexCoord(0.07, 0.93, 0.07, 0.93)
 		if talentData.i then tex:SetTexture(talentData.i) end
-		-- learned-state glow: an OVERLAY tint instead of tinting the backdrop
-		-- border (which paints the whole BLANK-edged cell gold on this client)
-		local glow = b:CreateTexture(nil, "BORDER", nil, 1)
+		-- learned-state ring: 4 thin gold edge lines instead of a fill --
+		-- a full-cell WHITE8X8 floods the icon on this client
+		local glow = CreateFrame("Frame", nil, b)
 		glow:SetAllPoints()
-		glow:SetTexture([[Interface\Buttons\WHITE8X8]])
-		glow:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.22)
+		glow:SetFrameLevel(b:GetFrameLevel() + 1)
+		local edges = {}
+		for _, e in ipairs({ { "TOPLEFT", "TOPRIGHT", "TOP", "TOP", 0, 0, 1 },
+							 { "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOM", "BOTTOM", 0, 0, 1 },
+							 { "TOPLEFT", "BOTTOMLEFT", "LEFT", "LEFT", 0, 0, 0 },
+							 { "TOPRIGHT", "BOTTOMRIGHT", "RIGHT", "RIGHT", 0, 0, 0 } }) do
+			local t = glow:CreateTexture(nil, "OVERLAY")
+			t:SetTexture([[Interface\Buttons\WHITE8X8]])
+			t:SetVertexColor(GOLD[1], GOLD[2], GOLD[3], 0.85)
+			t:ClearAllPoints()
+			t:SetPoint(e[1])
+			t:SetPoint(e[2])
+			if e[3] == "TOP" then t:SetHeight(1)
+			elseif e[3] == "BOTTOM" then t:SetHeight(1)
+			else t:SetWidth(1) end
+			edges[#edges + 1] = t
+		end
 		glow:Hide()
 		b.suiLearned = glow
 		local lbl = S:FontString(b, 10, "OUTLINE", S.media.numberFont or S.media.font, nil, "RIGHT")
@@ -1562,7 +1577,7 @@ function TA:Initialize()
 	self.db.minimap = self.db.minimap or { hide = false }
 	self.minimapBtn = S:CreateMinimapButton({
 		name = "talentatlas",
-		icon = "Interface\\Icons\\INV_Misc_Book_09",
+		glyph = "TA",
 		angle = 250,
 		store = self.db.minimap,
 		onLeft = function() TA:Toggle() end,

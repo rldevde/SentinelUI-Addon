@@ -1,14 +1,126 @@
--- RaidGrid: healer-oriented raid grid (own implementation). Members are laid
+-- RaidGrid (HealGrid): healer-oriented raid grid. Members are laid
 -- out by raid subgroup as clickable unit cells: class-colored or health-
 -- gradient health bar, mana/power bar, name, hp/deficit text, dead/offline/
--- AFK states, aggro dot, dispel-typed debuff icons with colored border, own
--- HoT tracking, incoming-heal + absorb preview, raid marker, role badge,
--- ready-check state, resurrection icon, missing-buff watch, range fade and a
--- full click-cast system (same binding format as unit frames).
+-- AFK states, aggro dot, dispel-typed debuff icons with colored border,
+-- incoming-heal + absorb preview, raid marker, role badge, ready-check
+-- state, resurrection icon, pets column, range fade and a full click-cast
+-- system. No buff icons are shown — debuffs only.
 local _, ns = ...
 local S = ns.S
 local L = S.L
 local RG = S:NewModule("RaidGrid", "raidgrid")
+
+-- The grid code below is the HealGrid addon's, unchanged. It talks to a small
+-- "HG" helper API; this bridge maps that API onto SentinelUI so both stay in
+-- sync (settings live in the profile, UI helpers come from the toolkit).
+local HG = setmetatable({}, { __index = function(_, k)
+	if k == "db" then return RG.db end
+	if k == "charDb" then return RG.private end
+	return S[k]
+end })
+for _, n in ipairs({ "FontString", "RunOutOfCombat", "SetTemplate", "SkinEditBox", "SkinButton", "Print",
+	"SetFont", "LogError", "SkinCheckBox", "SkinSlider", "SkinFrame", "SkinCloseButton", "SetInside" }) do
+	HG[n] = function(_, ...) return S[n](S, ...) end
+end
+
+-- color picker (multi-client compat: SetupColorPickerAndShow / OpenColorPicker / ShowColorPicker)
+function HG:PickColor(color, onChange)
+	local info = {
+		r = color.r or 1, g = color.g or 1, b = color.b or 1,
+		swatchFunc = function()
+			local r, g, b = ColorPickerFrame:GetColorRGB()
+			onChange(r, g, b)
+		end,
+		cancelFunc = function(prev)
+			prev = prev or info
+			onChange(prev.r, prev.g, prev.b)
+		end,
+	}
+	if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
+		ColorPickerFrame:SetupColorPickerAndShow(info)
+	elseif OpenColorPicker then
+		OpenColorPicker(info)
+	elseif ShowColorPicker then
+		ShowColorPicker(info.r, info.g, info.b, function(restore)
+			if restore then onChange(restore.r, restore.g, restore.b)
+			else local r, g, b = ColorPickerFrame:GetColorRGB() onChange(r, g, b) end
+		end)
+	end
+end
+
+-- settings serialize/deserialize (profiles + export/import)
+local function Merge(dst, src)
+	for k, v in pairs(src) do
+		if type(v) == "table" then
+			if type(dst[k]) ~= "table" then
+				dst[k] = {}
+				Merge(dst[k], v)
+			elseif v[1] == nil then
+				Merge(dst[k], v)
+			end
+			-- arrays (e.g. click-cast bindings) are user-owned once present
+		elseif dst[k] == nil then
+			dst[k] = v
+		end
+	end
+end
+
+local function Ser(v)
+	local t = type(v)
+	if t == "number" or t == "boolean" then return tostring(v) end
+	if t == "string" then return string.format("%q", v) end
+	if t == "table" then
+		local p = {}
+		for k, val in pairs(v) do p[#p + 1] = "[" .. Ser(k) .. "]=" .. Ser(val) end
+		return "{" .. table.concat(p, ",") .. "}"
+	end
+	return "nil"
+end
+
+local function DefaultsTable() return S.defaults.profile.raidgrid end
+
+-- seed the full click-cast matrix when empty (fresh install or cleared list)
+local function SeedClickCast(db)
+	local cc = db.clickCast
+	if cc and cc.bindings and #cc.bindings > 0 then return end
+	db.clickCast = cc or {}
+	cc = db.clickCast
+	cc.bindings = {}
+	for i, b in ipairs(DefaultsTable().clickCast.bindings) do
+		cc.bindings[i] = { button = b.button, mod = b.mod, type = b.type, value = b.value }
+	end
+end
+
+function HG:SerializeDB()
+	local t = {}
+	for k, v in pairs(RG.db) do
+		if k ~= "profiles" then t[k] = v end
+	end
+	return "HG1:" .. Ser(t)
+end
+
+function HG:DeserializeDB(str)
+	if type(str) ~= "string" then return nil end
+	str = strtrim(str)
+	if str:sub(1, 4) ~= "HG1:" then return nil end
+	local f = (loadstring or load)("return " .. str:sub(5))
+	if not f then return nil end
+	local ok, t = pcall(f)
+	return ok and type(t) == "table" and t or nil
+end
+
+-- replace the live settings table with imported/profile data
+function HG:ApplySettings(t)
+	local db = RG.db
+	for k in pairs(db) do if k ~= "profiles" then db[k] = nil end end
+	Merge(db, t)
+	Merge(db, DefaultsTable())
+	SeedClickCast(db)
+end
+
+function HG:ResetSettings()
+	self:ApplySettings({})
+end
 
 local _G = _G
 local ipairs, pairs, wipe, tinsert, sort = ipairs, pairs, wipe, table.insert, table.sort
@@ -26,19 +138,57 @@ local UnitGroupRolesAssigned, UnitIsUnit = UnitGroupRolesAssigned, UnitIsUnit
 local UnitHasIncomingResurrection = UnitHasIncomingResurrection
 local GetReadyCheckStatus, GetRaidTargetIndex = GetReadyCheckStatus, GetRaidTargetIndex
 local Ambiguate, GetRaidRosterInfo, SetRaidTargetIconTexture = Ambiguate, GetRaidRosterInfo, SetRaidTargetIconTexture
+local UnitCastingInfo, UnitChannelInfo = UnitCastingInfo, UnitChannelInfo
+local PlaySound, PlaySoundFile = PlaySound, PlaySoundFile
 local CreateFrame = CreateFrame
 local GameTooltip = GameTooltip
 
 local MAX_GROUPS, MAX_ROWS = 8, 5
-local MAX_DEBUFFS, MAX_HOTS, MAX_BUFFWATCH, MAX_WATCH = 3, 3, 2, 2
+local MAX_DEBUFFS = 3
 local members = {}        -- group -> { unit, name, class }
 local ticker
+RG.dispelSeen = {}        -- unit -> set of currently dispellable debuff names
+RG.castTarget, RG.castEndT, RG.castDur = nil, nil, nil
 
 local DEBUFF_COLORS = {
 	Magic = { 0.2, 0.6, 1 }, Curse = { 0.6, 0.0, 1 },
 	Disease = { 0.6, 0.4, 0 }, Poison = { 0, 0.6, 0 }, [""] = { 0.8, 0, 0 },
 }
+-- user-configurable debuff border colors (db.debuffColors) over the defaults
+local function DebuffColor(dn)
+	local dc = RG.db and RG.db.debuffColors
+	local c = dc and (dc[dn] or dc.Other)
+	if c and c.r then return { c.r, c.g, c.b } end
+	return DEBUFF_COLORS[dn] or DEBUFF_COLORS[""]
+end
 local ROLE_MARK = { TANK = "|cff8888ffT|r", HEALER = "|cff55ff55H|r", DAMAGER = "" }
+-- own heal-over-time effects per class (corner indicator is opt-in)
+local OWN_HOTS = {
+	PRIEST = { 139, 41635, 33076 },              -- Renew, ProM glyph?, Prayer of Mending
+	PALADIN = { 53563, 156910 },                 -- Beacon of Light, Beacon of Faith
+	DRUID = { 774, 8936, 33763, 48438 },         -- Rejuv, Regrowth, Lifebloom, Wild Growth
+	SHAMAN = { 61295, 974 },                     -- Riptide, Earth Shield
+	MONK = { 115151, 124682, 119611 },           -- Renewing Mist, Enveloping Mist
+	EVOKER = { 364343, 355913, 366155 },         -- Echo, Emerald Blossom, Reversion
+}
+local HOT_SET
+local function OwnHotSet()
+	if HOT_SET then return HOT_SET end
+	HOT_SET = {}
+	for _, id in ipairs(OWN_HOTS[HG.myClass] or {}) do
+		local n = HG.GetSpellInfo(id)
+		if n then HOT_SET[n] = true end
+	end
+	return HOT_SET
+end
+
+-- comma-separated spell-ID list -> set (highlighted debuffs)
+local function ParseIDSet(s)
+	if type(s) ~= "string" or s == "" then return nil end
+	local t = {}
+	for id in s:gmatch("%d+") do t[tonumber(id)] = true end
+	return next(t) and t or nil
+end
 local POWER_COLORS = { [0] = { 0, 0.45, 1 }, [1] = { 1, 0.2, 0.2 }, [3] = { 1, 0.6, 0.2 } } -- mana / rage / energy
 local DISPEL_SPELLS = { -- first known spell of the player's class wins
 	PRIEST = { 527, 988, 552, 528 },
@@ -48,52 +198,28 @@ local DISPEL_SPELLS = { -- first known spell of the player's class wins
 	MAGE = { 475 },
 	WARLOCK = { 19505 },
 }
--- which debuff types each class can remove (defensive dispels)
-local CAN_DISPEL = {
+-- debuff types each class can remove (used by the "only dispellable" filter)
+local DISPEL_TYPES = {
 	PRIEST = { Magic = true, Disease = true },
-	PALADIN = { Magic = true, Disease = true, Poison = true },
-	DRUID = { Poison = true, Curse = true },
+	PALADIN = { Magic = true, Poison = true, Disease = true },
+	DRUID = { Curse = true, Poison = true },
+	SHAMAN = { Curse = true, Poison = true, Disease = true },
 	MAGE = { Curse = true },
-	WARLOCK = { Magic = true },            -- felhunter devour magic
+	WARLOCK = { Magic = true },
+	MONK = { Magic = true, Poison = true, Disease = true },
+	EVOKER = { Magic = true, Poison = true, Curse = true, Disease = true },
 }
-do
-	-- shamans only get magic dispel via the Wrath+ talent Cleanse Spirit
-	CAN_DISPEL.SHAMAN = { Poison = true, Disease = true }
-	if not (S.isTBC or S.isClassic) then CAN_DISPEL.SHAMAN.Magic = true end
-end
--- buff watch: spell-id groups; shown as icon when *no* aura of the group is up.
--- name/icon resolve lazily so each client/localization uses live data.
-local BUFFWATCH = {
-	{ 1243, 21562 },        -- Power Word: Fortitude / Prayer of Fortitude
-	{ 1126, 21849, 5234 },  -- Mark of the Wild / Gift of the Wild
-	{ 1459, 10157, 23028 }, -- Arcane Intellect / Brilliance
-	{ 14752, 27681 },       -- Divine Spirit / Prayer of Spirit
-	{ 976, 27683 },         -- Shadow Protection / Prayer of Shadow Protection
-}
-local buffNames -- [group] -> {name, icon} once resolved
-
-local function ResolveBuffWatch()
-	if buffNames then return end
-	buffNames = {}
-	for gi, ids in ipairs(BUFFWATCH) do
-		for _, id in ipairs(ids) do
-			local name, _, icon = S.GetSpellInfo(id)
-			if name then buffNames[gi] = { name = name, icon = icon, ids = ids } break end
-		end
-	end
-end
-
 -- click-cast: same binding format as unitframes.clickCast ---------------------
 -- { button = "1".."5", mod = "none"|"shift"|"ctrl"|"alt", type = "spell"|"macro"|"item"|"target"|"togglemenu"|"focus", value = "..." }
 -- spell value "dispel"/"heal"/"rez" resolves to the class spell automatically.
--- while db.rezOnDead, every spell/menu binding becomes a hybrid macro that
--- casts the class rez on dead cells (battle rez while in combat).
+-- with db.rezOnDead every spell binding becomes a hybrid macro that casts the
+-- class rez on dead cells (battle rez while in combat) — no attribute swaps.
 local CC_VALUE_ATTR = { spell = "spell", macro = "macrotext", item = "item" }
 
 local function ResolveDispel()
-	for _, id in ipairs(DISPEL_SPELLS[S.myClass] or {}) do
-		if S.IsSpellKnown and S.IsSpellKnown(id) then
-			return S.GetSpellInfo(id)
+	for _, id in ipairs(DISPEL_SPELLS[HG.myClass] or {}) do
+		if HG.IsSpellKnown and HG.IsSpellKnown(id) then
+			return HG.GetSpellInfo(id)
 		end
 	end
 end
@@ -115,27 +241,77 @@ local CLASS_SPELLS = {
 }
 
 local function ResolveHeal()
-	for _, id in ipairs(CLASS_SPELLS[S.myClass] or {}) do
-		if S.IsSpellKnown and S.IsSpellKnown(id) then
-			return S.GetSpellInfo(id)
+	for _, id in ipairs(CLASS_SPELLS[HG.myClass] or {}) do
+		if HG.IsSpellKnown and HG.IsSpellKnown(id) then
+			return HG.GetSpellInfo(id)
 		end
 	end
 end
 
--- resurrection spells come from the shared resolver (Core/Compat.lua):
--- ClassRezSpells() returns the localized normal + battle rez names
+-- class resurrection spells (normal rez first, then battle/mass rez)
+local REZ_SPELLS = {
+	PRIEST = { 2006, 212036 },               -- Resurrection, Mass Resurrection
+	PALADIN = { 7328, 212056 },              -- Redemption, Absolution
+	DRUID = { 50769, 212040 },               -- Revive, Revitalize
+	SHAMAN = { 2008, 212048 },               -- Ancestral Spirit, Ancestral Vision
+	MONK = { 115178, 212051 },               -- Resuscitate, Reawaken
+	EVOKER = { 361227, 361178 },             -- Return, Mass Return
+	WARLOCK = { 20707 },                     -- Soulstone (rez-capable on later clients)
+}
+-- battle resurrections: usable in combat, checked FIRST while fighting
+local REZ_BATTLE = {
+	DRUID = { 20484 },                       -- Rebirth
+	DEATHKNIGHT = { 61999 },                 -- Raise Ally
+	WARLOCK = { 20707 },                     -- Soulstone on dead targets
+}
+
 local function ResolveRez()
-	local normal, battle = S.ClassRezSpells()
-	return normal or battle
+	-- in combat the battle rez wins; out of combat the cheaper normal rez
+	local first = InCombatLockdown() and REZ_BATTLE or REZ_SPELLS
+	local second = InCombatLockdown() and REZ_SPELLS or REZ_BATTLE
+	for _, list in ipairs({ first[HG.myClass], second[HG.myClass] }) do
+		for _, id in ipairs(list or {}) do
+			if HG.IsSpellKnown and HG.IsSpellKnown(id) then
+				return HG.GetSpellInfo(id)
+			end
+		end
+	end
 end
 
--- hidden secure proxy so the dead-click macro can still open the unit menu on
--- live targets (a macro cannot run the togglemenu action itself)
+-- both rez names at once: normal + battle rez (for hybrid macros)
+local function ResolveRezSpells()
+	local normal, battle
+	for _, id in ipairs(REZ_SPELLS[HG.myClass] or {}) do
+		if HG.IsSpellKnown and HG.IsSpellKnown(id) then normal = HG.GetSpellInfo(id) break end
+	end
+	for _, id in ipairs(REZ_BATTLE[HG.myClass] or {}) do
+		if HG.IsSpellKnown and HG.IsSpellKnown(id) then battle = HG.GetSpellInfo(id) break end
+	end
+	return normal, battle
+end
+
+-- spell picker list for the options window: keywords first, then every known
+-- class heal spell by localized name
+local spellPickerList
+local function ClassSpellList()
+	if spellPickerList then return spellPickerList end
+	spellPickerList = { "heal", "dispel", "rez" }
+	for _, id in ipairs(CLASS_SPELLS[HG.myClass] or {}) do
+		local name = HG.GetSpellInfo(id)
+		if name and (not HG.IsSpellKnown or HG.IsSpellKnown(id)) then
+			spellPickerList[#spellPickerList + 1] = name
+		end
+	end
+	return spellPickerList
+end
+
+-- hidden secure proxy: dead-click macros cannot run the togglemenu action, so
+-- the menu is opened through a /click on this button when the unit is alive
 local rezProxyN = 0
 local function RezMenuProxy(cell)
 	if not cell.rezMenuProxy then
 		rezProxyN = rezProxyN + 1
-		local p = CreateFrame("Button", "SUIRGRezMenu" .. rezProxyN, cell, "SecureActionButtonTemplate")
+		local p = CreateFrame("Button", "HGRezMenu" .. rezProxyN, cell, "SecureActionButtonTemplate")
 		p:SetAttribute("type", "togglemenu")
 		p:SetAttribute("useparent-unit", true)
 		p:RegisterForClicks("AnyUp", "AnyDown")
@@ -148,51 +324,30 @@ local function RezMenuProxy(cell)
 	return cell.rezMenuProxy
 end
 
+-- hybrid dead-click macro: battle rez in combat, normal rez out of combat,
+-- original spell on live units. The battle rez is usable out of combat too, so
+-- classes without a normal rez (TBC druids only know Rebirth) still rez.
 local function RezMacro(unit, normal, battle, spell)
 	unit = unit or "player"
 	local parts = {}
 	if battle then parts[#parts + 1] = format("[@%s,dead,combat,help] %s", unit, battle) end
-	-- the battle rez is usable out of combat too: classes without a normal rez
-	-- (TBC druids only know Rebirth) still get a working dead-click
 	local ooc = normal or battle
 	if ooc then parts[#parts + 1] = format("[@%s,dead,help] %s", unit, ooc) end
 	if spell and spell ~= "" then parts[#parts + 1] = format("[@%s,help] %s", unit, spell) end
-	-- /cast inside a macro does not unshift automatically the way plain spell
--- bindings do, so forms that cannot cast need an explicit cancelform.
--- Pre-Wrath druids may heal in Moonkin AND Tree of Life: only the
--- physical forms (bear/aquatic/cat/travel = 1-4) are cancelled there.
--- Priest Shadowform and Shaman Ghost Wolf are both form index 1 and
--- cannot heal, so they get a conditional cancel too.
+	-- /cast inside a macro does not unshift automatically the way plain
+-- spell bindings do, so forms that cannot cast get a cancelform entry.
+-- Blocklist, not allowlist: only forms proven unable to cast are
+-- cancelled - Tree of Life, Moonkin and anything unfamiliar stays.
+local NOHEAL = { [5487] = true, [9634] = true, [1066] = true, [768] = true,
+	[783] = true, [15473] = true, [2645] = true }
 local unshift = ""
--- blocklist, not allowlist: only forms PROVEN unable to cast get a
--- cancelform entry. Tree of Life, Moonkin and anything the client reports
--- with an unfamiliar spell id stay untouched, so the form can never be
--- dropped by accident.
-local NOHEAL = { [5487] = true, [9634] = true, [1066] = true, [768] = true, [783] = true,
-	[15473] = true, [2645] = true }
-local forms = (GetNumShapeshiftForms and GetNumShapeshiftForms()) or 0
 local cancel = {}
-for i = 1, forms do
+for i = 1, (GetNumShapeshiftForms and GetNumShapeshiftForms() or 0) do
 	local _, _, _, sid = GetShapeshiftFormInfo(i)
 	if sid and NOHEAL[sid] then cancel[#cancel + 1] = i end
 end
 if #cancel > 0 then unshift = format("/cancelform [form:%s]\n", table.concat(cancel, "/")) end
 return unshift .. "/cast " .. table.concat(parts, "; ")
-end
-
--- spell picker list for the options window: keywords first, then every known
--- class heal spell by localized name
-local spellPickerList
-local function ClassSpellList()
-	if spellPickerList then return spellPickerList end
-	spellPickerList = { "heal", "dispel", "rez" }
-	for _, id in ipairs(CLASS_SPELLS[S.myClass] or {}) do
-		local name = S.GetSpellInfo(id)
-		if name and (not S.IsSpellKnown or S.IsSpellKnown(id)) then
-			spellPickerList[#spellPickerList + 1] = name
-		end
-	end
-	return spellPickerList
 end
 
 function RG:ApplyClicksTo(cell)
@@ -212,16 +367,17 @@ function RG:ApplyClicksTo(cell)
 		local vname = CC_VALUE_ATTR[b.type or ""]
 		local value = b.value
 		local normal, battle
-		if self.db.rezOnDead then normal, battle = S.ClassRezSpells() end
+		if self.db.rezOnDead then normal, battle = ResolveRezSpells() end
 		if b.type == "spell" then
 			local lv = lower(value or "")
 			if lv == "dispel" or lv == "heal" or lv == "rez" then
 				value = lv == "dispel" and ResolveDispel() or (lv == "heal" and ResolveHeal() or ResolveRez())
 				if not value then cell:SetAttribute(tattr, "togglemenu") end -- no spell known -> menu
 			end
+			-- hybrid macro: dead cells cast the class rez automatically (battle
+			-- rez while in combat) — attribute swaps are impossible in combat,
+			-- so the macro condition does the switch instead of cell.isDead
 			if normal or battle then
-				-- hybrid macro: dead cells cast the class rez (battle rez in
-				-- combat) — attribute swaps cannot happen in combat
 				cell:SetAttribute(tattr, "macro")
 				local vattr = mod .. "macrotext" .. btn
 				cell:SetAttribute(vattr, RezMacro(cell.unit, normal, battle, value))
@@ -262,16 +418,16 @@ local function MakeCell(parent)
 	local b = CreateFrame("Button", nil, parent, "SecureUnitButtonTemplate")
 	b:RegisterForClicks("AnyUp", "AnyDown")
 	b:EnableMouse(true)
-	S:SetTemplate(b, "Default")
+	HG:SetTemplate(b, "Default")
 
 	b.hp = CreateFrame("StatusBar", nil, b)
 	b.hp:SetPoint("TOPLEFT", 1, -1)
 	b.hp:SetPoint("BOTTOMRIGHT", -1, 1)
 	b.hp:SetMinMaxValues(0, 1)
-	b.hp:SetStatusBarTexture(S.media.statusbar)
+	b.hp:SetStatusBarTexture(HG.media.statusbar)
 	b.hp.bg = b.hp:CreateTexture(nil, "BACKGROUND")
 	b.hp.bg:SetAllPoints()
-	b.hp.bg:SetTexture(S.media.statusbar)
+	b.hp.bg:SetTexture(HG.media.statusbar)
 	b.hp.bg:SetVertexColor(0.08, 0.08, 0.08, 0.9)
 
 	-- heal/absorb previews are statusbars so the client itself clips their fill
@@ -282,14 +438,14 @@ local function MakeCell(parent)
 	b.inc:SetPoint("LEFT", b.hp)
 	b.inc:SetPoint("RIGHT", b.hp)
 	b.inc:SetMinMaxValues(0, 1)
-	b.inc:SetStatusBarTexture(S.media.statusbar)
+	b.inc:SetStatusBarTexture(HG.media.statusbar)
 	b.inc:SetStatusBarColor(0.2, 0.8, 0.2, 0.4)
 	b.inc:SetFrameLevel(b.hp:GetFrameLevel() + 1)
 	b.inc:Hide()
 	b.abs = CreateFrame("StatusBar", nil, b)
 	b.abs:SetAllPoints(b.hp)
 	b.abs:SetMinMaxValues(0, 1)
-	b.abs:SetStatusBarTexture(S.media.statusbar)
+	b.abs:SetStatusBarTexture(HG.media.statusbar)
 	b.abs:SetStatusBarColor(1, 0.85, 0.2, 0.45)
 	b.abs:SetReverseFill(true)
 	b.abs:SetFrameLevel(b.hp:GetFrameLevel() + 2)
@@ -300,7 +456,7 @@ local function MakeCell(parent)
 	b.pow:SetPoint("BOTTOMRIGHT", -1, 1)
 	b.pow:SetHeight(3)
 	b.pow:SetMinMaxValues(0, 1)
-	b.pow:SetStatusBarTexture(S.media.statusbar)
+	b.pow:SetStatusBarTexture(HG.media.statusbar)
 	b.pow:SetFrameLevel(b.hp:GetFrameLevel() + 1)
 
 	b.hl = b:CreateTexture(nil, "OVERLAY", nil, 5)
@@ -308,10 +464,10 @@ local function MakeCell(parent)
 	b.hl:SetColorTexture(1, 1, 1, 0.12)
 	b.hl:Hide()
 
-	b.name = S:FontString(b.hp, 10, "OUTLINE")
+	b.name = HG:FontString(b.hp, 10, "OUTLINE")
 	b.name:SetPoint("TOPLEFT", 3, -1)
 	b.name:SetWidth(0)
-	b.hpText = S:FontString(b.hp, 9, "OUTLINE")
+	b.hpText = HG:FontString(b.hp, 9, "OUTLINE")
 	b.hpText:SetPoint("BOTTOMRIGHT", -3, 4)
 
 	b.aggro = b:CreateTexture(nil, "OVERLAY", nil, 4)
@@ -333,8 +489,44 @@ local function MakeCell(parent)
 	b.res:SetPoint("CENTER", 0, 0)
 	b.res:SetTexture("Interface\\RaidFrame\\Raid-Icon-Rez")
 	b.res:Hide()
-	b.role = S:FontString(b.hp, 9, "OUTLINE")
+	b.role = HG:FontString(b.hp, 9, "OUTLINE")
 	b.role:SetPoint("TOPRIGHT", -3, -1)
+
+	-- own-HoT corner dot (opt-in), big whitelisted debuff icon, castbar, flash
+	b.hot = b:CreateTexture(nil, "OVERLAY", nil, 4)
+	b.hot:SetSize(8, 8)
+	b.hot:SetPoint("BOTTOMLEFT", 2, 2)
+	b.hot:SetColorTexture(0.2, 0.9, 0.4, 1)
+	b.hot:Hide()
+	b.bigDebuff = b:CreateTexture(nil, "OVERLAY", nil, 6)
+	b.bigDebuff:SetPoint("CENTER")
+	b.bigDebuff:SetSize(20, 20)
+	b.bigDebuff:SetTexCoord(0.07, 0.93, 0.07, 0.93)
+	b.bigDebuff:Hide()
+	b.cast = CreateFrame("StatusBar", nil, b)
+	b.cast:SetPoint("BOTTOMLEFT", b.pow, "TOPLEFT", 0, 1)
+	b.cast:SetPoint("BOTTOMRIGHT", b.pow, "TOPRIGHT", 0, 1)
+	b.cast:SetHeight(3)
+	b.cast:SetStatusBarTexture(HG.media.statusbar)
+	b.cast:SetStatusBarColor(1, 0.7, 0.2, 0.9)
+	b.cast:SetMinMaxValues(0, 1)
+	b.cast:Hide()
+	b.cast:SetScript("OnUpdate", function(c)
+		local rem = c.endT - GetTime()
+		if rem <= 0 then c:Hide() return end
+		c:SetValue(c.dur - rem)
+	end)
+	b.flash = CreateFrame("Frame", nil, b)
+	b.flash:SetAllPoints()
+	b.flash:Hide()
+	b.flash.tex = b.flash:CreateTexture(nil, "OVERLAY", nil, 6)
+	b.flash.tex:SetAllPoints()
+	b.flash.tex:SetColorTexture(1, 1, 1, 0.4)
+	b.flash:SetScript("OnUpdate", function(fr)
+		local t = fr.untilT - GetTime()
+		if t <= 0 then fr:Hide() return end
+		fr.tex:SetAlpha(0.35 * (math.sin(t * 9) * 0.5 + 0.5))
+	end)
 
 	b.debuffs = {}
 	for i = 1, MAX_DEBUFFS do
@@ -345,38 +537,6 @@ local function MakeCell(parent)
 		t:Hide()
 		b.debuffs[i] = t
 	end
-	b.hots, b.hotText = {}, {}
-	for i = 1, MAX_HOTS do
-		local t = b:CreateTexture(nil, "OVERLAY", nil, 4)
-		t:SetSize(11, 11)
-		t:SetPoint("BOTTOMLEFT", 3 + (i - 1) * 13, 4)
-		t:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-		t:Hide()
-		b.hots[i] = t
-		local fs = S:FontString(b, 8, "OUTLINE", S.media.numberFont)
-		fs:SetPoint("CENTER", t, "CENTER", 0, 0)
-		b.hotText[i] = fs
-	end
-	b.watch = {}
-	for i = 1, MAX_WATCH do
-		local t = b:CreateTexture(nil, "OVERLAY", nil, 4)
-		t:SetSize(11, 11)
-		t:SetPoint("TOPLEFT", 3 + (i - 1) * 13, -2)
-		t:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-		t:Hide()
-		b.watch[i] = t
-	end
-	b.buffs = {}
-	for i = 1, MAX_BUFFWATCH do
-		local t = b:CreateTexture(nil, "OVERLAY", nil, 4)
-		t:SetSize(10, 10)
-		t:SetPoint("BOTTOMRIGHT", -(3 + (i - 1) * 11), 4)
-		t:SetTexCoord(0.07, 0.93, 0.07, 0.93)
-		t:SetVertexColor(1, 0.3, 0.3)
-		t:Hide()
-		b.buffs[i] = t
-	end
-
 	b:SetScript("OnEnter", function(c)
 		c.hl:Show()
 		if RG.db.unitTooltip and c.unit then
@@ -387,24 +547,20 @@ local function MakeCell(parent)
 	end)
 	b:SetScript("OnLeave", function(c) c.hl:Hide() GameTooltip:Hide() end)
 	b:Hide()
-	-- unit watch = the client shows/hides the cell as its unit appears or
-	-- vanishes, so members leaving (or joining into a spare cell) in combat
-	-- update at once; Show/Hide/SetAttribute are blocked there for us
-	RegisterUnitWatch(b)
 	return b
 end
 
 -- frame ---------------------------------------------------------------------
 function RG:BuildFrame()
 	if self.frame then return end
-	local f = CreateFrame("Frame", "SentinelUIRaidGrid", UIParent, S.BackdropTemplate)
+	local f = CreateFrame("Frame", "SentinelUIRaidGrid", UIParent, HG.BackdropTemplate)
 	f:SetToplevel(true)
 	f:SetMovable(true)
 	f:EnableMouse(true)
 	f:RegisterForDrag("LeftButton")
 	f:SetClampedToScreen(true)
 	f:SetFrameStrata("MEDIUM")
-	S:SetTemplate(f, "Default")
+	HG:SetTemplate(f, "Default")
 	f:Hide()
 	f:SetScript("OnDragStart", function(fr) if not RG.db.lockFrame then fr:StartMoving() end end)
 	f:SetScript("OnDragStop", function(fr)
@@ -423,11 +579,11 @@ function RG:BuildFrame()
 	f.anchor:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, -1)
 	f.anchor:EnableMouse(true)
 	f.anchor:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-	S:SetTemplate(f.anchor, "Default")
+	HG:SetTemplate(f.anchor, "Default")
 	local at = f.anchor:CreateTexture(nil, "OVERLAY")
 	at:SetPoint("CENTER")
 	at:SetSize(8, 3)
-	at:SetVertexColor(S.accent.r, S.accent.g, S.accent.b, 0.9)
+	at:SetVertexColor(HG.accent.r, HG.accent.g, HG.accent.b, 0.9)
 	f.anchor:SetScript("OnMouseDown", function(_, btn)
 		if btn == "LeftButton" and not RG.db.lockFrame then f:StartMoving() end
 	end)
@@ -446,6 +602,17 @@ function RG:BuildFrame()
 		if btn == "RightButton" then RG:ToggleConfig() end
 	end)
 
+	-- free click zone: a tiny pad next to the anchor running a user macro
+	f.pad = CreateFrame("Button", "SentinelUIRaidGridMacroPad", f, "SecureActionButtonTemplate")
+	f.pad:SetSize(16, 10)
+	f.pad:SetPoint("LEFT", f.anchor, "RIGHT", 4, 0)
+	f.pad:RegisterForClicks("AnyUp", "AnyDown")
+	HG:SetTemplate(f.pad, "Default")
+	local pt = HG:FontString(f.pad, 8, "OUTLINE")
+	pt:SetPoint("CENTER")
+	pt:SetText("|cff" .. HG.accentHex .. "M|r")
+	f.pad:Hide()
+
 	self.cells = {}
 	for g = 1, MAX_GROUPS do
 		self.cells[g] = {}
@@ -457,17 +624,58 @@ function RG:BuildFrame()
 end
 
 -- roster --------------------------------------------------------------------
+-- visibility rule from db.visMode; showWhenSolo governs the ALWAYS case
+local TEST_CLASSES = {
+	"PALADIN", "PRIEST", "SHAMAN", "DRUID", "MONK", "EVOKER",
+	"WARRIOR", "DEATHKNIGHT", "DEMONHUNTER", "ROGUE", "HUNTER", "MAGE", "WARLOCK",
+}
+local TEST_DISPELS = { "Magic", "Curse", "Poison", "Disease" }
+local TEST_SPELLS = { 589, 172, 980, 703 } -- SW:Pain, Corruption, Agony, Garrote — exist on every client
+local TEST_ROLES = { [1] = "TANK", [2] = "TANK" }
+for i = 3, 8 do TEST_ROLES[i] = "HEALER" end
+
+local function SpellIcon(id)
+	if C_Spell and C_Spell.GetSpellTexture then return C_Spell.GetSpellTexture(id) end
+	return GetSpellTexture and GetSpellTexture(id)
+end
+
+function RG:ShouldShow()
+	if (self.db.testSize or 0) > 0 then return true end
+	local vis = self.db.visMode or "ALWAYS"
+	if vis == "RAID" then return IsInRaid() end
+	if vis == "GROUP" then return IsInRaid() or IsInGroup() end
+	return true
+end
+
 function RG:Collect()
 	wipe(members)
+	-- test mode: fill the grid with deterministic fake members so the layout
+	-- can be previewed without a group; real roster wins when testSize is 0
+	local n = min(self.db.testSize or 0, MAX_GROUPS * MAX_ROWS)
+	if n > 0 then
+		for i = 1, n do
+			local g = floor((i - 1) / MAX_ROWS) + 1
+			local list = members[g] or {}
+			members[g] = list
+			list[#list + 1] = {
+				unit = "player", test = i,
+				name = "Test" .. i,
+				class = TEST_CLASSES[((i - 1) % #TEST_CLASSES) + 1],
+				role = TEST_ROLES[i] or "DAMAGER",
+			}
+		end
+		return
+	end
+	if not self:ShouldShow() then return end
 	local function Add(unit, grp)
-		local isPet = unit:find("pet") ~= nil
-		if not UnitExists(unit) or (not isPet and not UnitIsPlayer(unit)) then return end
+		if not UnitExists(unit) or not UnitIsPlayer(unit) then return end
 		grp = min(max(grp or 1, 1), MAX_GROUPS)
 		local list = members[grp] or {}
 		members[grp] = list
 		if #list < MAX_ROWS then
 			local _, class = UnitClass(unit)
-			list[#list + 1] = { unit = unit, name = Ambiguate(UnitName(unit), "short"), class = class, pet = isPet }
+			list[#list + 1] = { unit = unit, name = Ambiguate(UnitName(unit), "short"), class = class,
+				role = (UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)) or "DAMAGER" }
 		end
 	end
 	if IsInRaid() then
@@ -481,40 +689,54 @@ function RG:Collect()
 	elseif self.db.showWhenSolo then
 		Add("player", 1)
 	end
-	-- pets land in the last grid column
+	-- pets fill the first free column after the last populated group,
+	-- colored by their owner's class
 	if self.db.showPets then
+		local used = 0
+		for g = 1, MAX_GROUPS do
+			if members[g] and #members[g] > 0 then used = g end
+		end
+		local col = used + 1
+		local function AddPet(unit, ownerClass)
+			if col > MAX_GROUPS or not UnitExists(unit) then return end
+			local name = UnitName(unit)
+			if not name then return end
+			local list = members[col] or {}
+			if #list >= MAX_ROWS then
+				col = col + 1
+				if col > MAX_GROUPS then return end
+				list = {}
+			end
+			members[col] = list
+			list[#list + 1] = { unit = unit, name = Ambiguate(name, "short"), class = ownerClass }
+		end
 		if IsInRaid() then
-			for i = 1, GetNumGroupMembers() do Add("raidpet" .. i, MAX_GROUPS) end
+			for i = 1, GetNumGroupMembers() do
+				AddPet("raidpet" .. i, select(2, UnitClass("raid" .. i)))
+			end
 		elseif IsInGroup() then
-			Add("pet", MAX_GROUPS)
-			for i = 1, GetNumGroupMembers() - 1 do Add("partypet" .. i, MAX_GROUPS) end
+			AddPet("pet", HG.myClass)
+			for i = 1, GetNumGroupMembers() - 1 do
+				AddPet("partypet" .. i, select(2, UnitClass("party" .. i)))
+			end
 		elseif self.db.showWhenSolo then
-			Add("pet", MAX_GROUPS)
+			AddPet("pet", HG.myClass)
 		end
 	end
-	if self.db.sortMethod == "NAME" then
+	local method = self.db.sortMethod
+	if method == "NAME" or method == "ROLE" then
+		local rank = { TANK = 1, HEALER = 2, DAMAGER = 3 }
 		for _, list in pairs(members) do
-			sort(list, function(a, b) return a.name < b.name end)
+			if method == "NAME" then
+				sort(list, function(a, b) return a.name < b.name end)
+			else
+				sort(list, function(a, b)
+					local ra, rb = rank[a.role] or 3, rank[b.role] or 3
+					return ra ~= rb and ra < rb or a.name < b.name
+				end)
+			end
 		end
 	end
-end
-
--- custom aura watch: comma-separated spell IDs (or names) -> icon set per cell
-local watchNames, watchKey
-local function AuraWatchList()
-	local raw = RG.db and RG.db.auraWatch or ""
-	if raw == watchKey then return watchNames end
-	watchKey = raw
-	watchNames = nil
-	if raw ~= "" then
-		watchNames = {}
-		for tok in raw:gmatch("[^,;%s]+") do
-			local id = tonumber(tok)
-			local name = id and S.GetSpellInfo(id) or tok
-			if type(name) == "string" and name ~= "" then watchNames[lower(name)] = true end
-		end
-	end
-	return watchNames
 end
 
 -- per-cell paint ------------------------------------------------------------
@@ -524,12 +746,21 @@ local function GradColor(frac) -- green -> yellow -> red
 end
 
 function RG:Paint(cell, m)
+	if m.test then return self:PaintTest(cell, m) end
 	local unit = m.unit
 	local hp, hpMax = UnitHealth(unit), UnitHealthMax(unit)
 	local dead = UnitIsDeadOrGhost(unit)
 	local offline = not UnitIsConnected(unit)
-	-- the dead-click rez is a macro condition, no attribute rebind needed here
-	cell.isDead = dead
+	local afk = self.db.showAFK ~= false and not dead and not offline
+		and UnitIsAFK and UnitIsAFK(unit) or false
+	if cell.isDead ~= dead then
+		cell.isDead = dead
+		if InCombatLockdown() then
+			HG:RunOutOfCombat(self.ApplyClicksTo, self, cell)
+		else
+			self:ApplyClicksTo(cell)
+		end
+	end
 	local color = RAID_CLASS_COLORS[m.class] or { r = 0.5, g = 0.5, b = 0.5 }
 	local frac = hpMax > 0 and hp / hpMax or 0
 
@@ -539,6 +770,9 @@ function RG:Paint(cell, m)
 		cell.hp:SetStatusBarColor(0.18, 0.18, 0.18)
 	elseif self.db.healthMode == "GRADIENT" then
 		cell.hp:SetStatusBarColor(GradColor(frac))
+	elseif self.db.healthMode == "CUSTOM" then
+		local c = self.db.customColor or { r = 0.2, g = 0.8, b = 0.2 }
+		cell.hp:SetStatusBarColor(c.r, c.g, c.b)
 	else
 		cell.hp:SetStatusBarColor(color.r, color.g, color.b)
 	end
@@ -560,19 +794,30 @@ function RG:Paint(cell, m)
 		cell.pow:Hide()
 	end
 
-	local mark = ROLE_MARK[UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or ""] or ""
+	local mark = self.db.showRole ~= false and (ROLE_MARK[UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or ""] or "") or ""
+	local dispName = m.name
+	local maxLen = self.db.nameMaxLen or 0
+	if maxLen > 0 and dispName:len() > maxLen then dispName = dispName:sub(1, maxLen) end
 	if dead then
-		cell.name:SetText("|cff888888" .. m.name .. "|r")
+		cell.name:SetText("|cff888888" .. dispName .. "|r")
 		cell.hpText:SetText(L["Dead"])
 	elseif offline then
-		cell.name:SetText("|cff888888" .. m.name .. "|r")
+		cell.name:SetText("|cff888888" .. dispName .. "|r")
 		cell.hpText:SetText(L["Offline"])
+	elseif afk then
+		cell.name:SetText("|cff888888" .. dispName .. "|r")
+		cell.hpText:SetText(L["AFK"])
 	else
-		local afk = self.db.showAFK ~= false and UnitIsAFK and UnitIsAFK(unit)
-		cell.name:SetText(m.name .. (afk and " |cff888888<AFK>|r" or ""))
-		if self.db.showDeficit then
+		cell.name:SetText(dispName)
+		local lm = self.db.lifeMode or "PERCENT"
+		if lm == "NONE" then
+			cell.hpText:SetText("")
+		elseif lm == "DEFICIT" then
 			local def = hp - hpMax
-			cell.hpText:SetText(def < 0 and format("|cffff7766%d|r", def) or format("%d%%", frac * 100))
+			cell.hpText:SetText(def < 0 and format("|cffff7766%d|r", def) or "")
+		elseif lm == "BOTH" then
+			local def = hp - hpMax
+			cell.hpText:SetText(def < 0 and format("|cffff7766%d|r  %d%%", def, frac * 100) or format("%d%%", frac * 100))
 		else
 			cell.hpText:SetText(format("%d%%", frac * 100))
 		end
@@ -582,10 +827,10 @@ function RG:Paint(cell, m)
 	-- incoming heals + absorbs preview. secret values (12.x) are skipped
 	-- entirely; the statusbars clip their own fill inside the cell
 	local w = cell.hp:GetWidth()
-	local secret = S.IsSecret(hp) or S.IsSecret(hpMax)
+	local secret = HG.IsSecret(hp) or HG.IsSecret(hpMax)
 	if self.db.showIncHeal and UnitGetIncomingHeals and not dead and not secret and w > 0 then
 		local inc = UnitGetIncomingHeals(unit)
-		if inc and not S.IsSecret(inc) and inc > 0 and hpMax > 0 then
+		if inc and not HG.IsSecret(inc) and inc > 0 and hpMax > 0 then
 			if hpMax > hp then
 				-- heal lands inside the missing health: green segment at the hp edge
 				-- (right edge stays anchored to the cell so it can never overflow)
@@ -610,7 +855,7 @@ function RG:Paint(cell, m)
 	end
 	if self.db.showAbsorb and UnitGetTotalAbsorbs and not dead and not secret and hpMax > 0 then
 		local ab = UnitGetTotalAbsorbs(unit)
-		if ab and not S.IsSecret(ab) and ab > 0 then
+		if ab and not HG.IsSecret(ab) and ab > 0 then
 			cell.abs:SetMinMaxValues(0, hpMax)
 			cell.abs:SetValue(min(hpMax, ab))
 			cell.abs:Show()
@@ -621,11 +866,13 @@ function RG:Paint(cell, m)
 		cell.abs:Hide()
 	end
 
-	-- aggro dot
-	cell.aggro:SetShown(not dead and (UnitThreatSituation and UnitThreatSituation(unit) or 0) >= 2)
+	-- aggro indicator (dot, border or both depending on aggroStyle)
+	local threat = not dead and (UnitThreatSituation and UnitThreatSituation(unit) or 0) >= 2
+	local aggroStyle = self.db.aggroStyle or "DOT"
+	cell.aggro:SetShown(threat and (aggroStyle == "DOT" or aggroStyle == "BOTH"))
 
 	-- raid marker
-	local ri = GetRaidTargetIndex and GetRaidTargetIndex(unit)
+	local ri = self.db.showRaidIcon ~= false and GetRaidTargetIndex and GetRaidTargetIndex(unit)
 	if ri and ri > 0 then
 		cell.raidIcon:Show()
 		SetRaidTargetIconTexture(cell.raidIcon, ri)
@@ -648,100 +895,288 @@ function RG:Paint(cell, m)
 	else
 		cell.ready:Hide()
 	end
-	cell.res:SetShown(not offline and UnitHasIncomingResurrection and UnitHasIncomingResurrection(unit) or false)
+	cell.res:SetShown(self.db.showResIcon ~= false and not offline and UnitHasIncomingResurrection and UnitHasIncomingResurrection(unit) or false)
 
-	-- auras: debuff icons + dispel border, own HoTs, missing buffs
-	local dN, hN, wN, auraNames = 0, 0, 0, self.db.buffWatch and {} or nil
-	local watch = AuraWatchList()
-	local onlyDispel = self.db.onlyDispellable and CAN_DISPEL[S.myClass]
-	for i = 1, 40 do
-		local a = S.GetAura(unit, i, "HARMFUL")
-		if not a then break end
-		if a.name and not S.IsSecret(a.name) and dN < MAX_DEBUFFS
-			and (not onlyDispel or (a.dispelName and onlyDispel[a.dispelName])) then
-			dN = dN + 1
-			cell.debuffs[dN]:SetTexture(a.icon)
-			cell.debuffs[dN].dispel = a.dispelName
-			cell.debuffs[dN]:Show()
-		end
-	end
-	for i = 1, 40 do
-		local a = S.GetAura(unit, i, "HELPFUL")
-		if not a then break end
-		if a.name and not S.IsSecret(a.name) then
-			if auraNames then auraNames[lower(a.name)] = true end
-			if watch and watch[lower(a.name)] and wN < MAX_WATCH then
-				wN = wN + 1
-				cell.watch[wN]:SetTexture(a.icon)
-				cell.watch[wN]:Show()
-			end
-			if self.db.showHots and a.sourceUnit == "player" and a.duration and a.duration > 0 and hN < MAX_HOTS then
-				hN = hN + 1
-				cell.hots[hN]:SetTexture(a.icon)
-				if self.db.hotDuration ~= false and a.expirationTime and a.expirationTime > 0 then
-					local rem = a.expirationTime - GetTime()
-					cell.hotText[hN]:SetText(rem > 0 and (rem >= 60 and format("%dm", rem / 60) or format("%d", rem)) or "")
-				else
-					cell.hotText[hN]:SetText("")
+	-- auras: debuff icons + dispel border (no buffs shown — decursing only)
+	local dN = 0
+	local onlyDisp = self.db.onlyDispellable
+	local canDispel = DISPEL_TYPES[HG.myClass]
+	local curDisp = canDispel and {} or nil
+	local bigIcon
+	if self.db.showDebuffs then
+		local hl = self.hlSet
+		for i = 1, 40 do
+			local a = HG.GetAura(unit, i, "HARMFUL")
+			if not a then break end
+			if a.name and not HG.IsSecret(a.name) then
+				if hl and not bigIcon and a.spellId and hl[a.spellId] then bigIcon = a.icon end
+				if curDisp and canDispel[a.dispelName or ""] then curDisp[a.name] = true end
+				if dN < MAX_DEBUFFS
+					and (not onlyDisp or (canDispel ~= nil and canDispel[a.dispelName or ""])) then
+					dN = dN + 1
+					cell.debuffs[dN]:SetTexture(a.icon)
+					cell.debuffs[dN].dispel = a.dispelName
+					cell.debuffs[dN]:Show()
 				end
-				cell.hots[hN]:Show()
 			end
 		end
 	end
 	for i = dN + 1, MAX_DEBUFFS do cell.debuffs[i]:Hide() cell.debuffs[i].dispel = nil end
-	for i = hN + 1, MAX_HOTS do cell.hots[i]:Hide() cell.hotText[i]:SetText("") end
-	for i = wN + 1, MAX_WATCH do cell.watch[i]:Hide() end
 
-	-- border: debuff color > own target accent > default
+	-- whitelisted debuff shown big in the cell center
+	if bigIcon then
+		cell.bigDebuff:SetTexture(bigIcon)
+		cell.bigDebuff:Show()
+	else
+		cell.bigDebuff:Hide()
+	end
+
+	-- dispel alert: sound and/or border flash when a NEW removable debuff appears
+	if curDisp then
+		local prev = self.dispelSeen[unit]
+		if prev and self.db.dispelAlert ~= "NONE" then
+			for name in pairs(curDisp) do
+				if not prev[name] then
+					local mode = self.db.dispelAlert
+					if mode == "FLASH" or mode == "BOTH" then
+						cell.flash.untilT = GetTime() + 1.4
+						cell.flash:Show()
+					end
+					if (mode == "SOUND" or mode == "BOTH")
+						and (not self.lastAlertT or GetTime() - self.lastAlertT > 0.8) then
+						self.lastAlertT = GetTime()
+						if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then
+							PlaySound(SOUNDKIT.RAID_WARNING)
+						elseif PlaySoundFile then
+							pcall(PlaySoundFile, "Sound\\Interface\\RaidWarning.ogg")
+						end
+					end
+					break
+				end
+			end
+		end
+		self.dispelSeen[unit] = curDisp
+	end
+
+	-- own HoT corner dot (opt-in); turns red in the last 3 seconds
+	if self.db.showHotCorner and not dead then
+		local set = OwnHotSet()
+		local best
+		for i = 1, 40 do
+			local a = HG.GetAura(unit, i, "HELPFUL|PLAYER")
+			if not a then break end
+			if a.name and set[a.name] then best = a break end
+		end
+		if best then
+			local c = self.db.hotColor or { r = 0.2, g = 0.9, b = 0.4 }
+			local rem = best.expirationTime and (best.expirationTime - GetTime()) or 99
+			if rem < 3 then cell.hot:SetColorTexture(1, 0.3, 0.2, 1)
+			else cell.hot:SetColorTexture(c.r, c.g, c.b, 1) end
+			cell.hot:Show()
+		else
+			cell.hot:Hide()
+		end
+	else
+		cell.hot:Hide()
+	end
+
+	-- the unit the player is currently casting on: castbar + optional border
+	local isCT = self.castTarget ~= nil and self.castTarget == m.name
+	if isCT and self.castEndT and GetTime() < self.castEndT and self.db.showCastbar ~= false then
+		cell.cast.dur = self.castDur or 0.1
+		cell.cast.endT = self.castEndT
+		cell.cast:SetMinMaxValues(0, cell.cast.dur)
+		cell.cast:Show()
+	else
+		cell.cast:Hide()
+	end
+
+	-- border: debuff color > aggro border > cast target > own target > default
 	local bcol
 	if dN > 0 and self.db.showDebuffs then
 		for i = 1, dN do
 			local dn = cell.debuffs[i].dispel
-			if dn then bcol = DEBUFF_COLORS[dn] or DEBUFF_COLORS[""] break end
+			if dn then bcol = DebuffColor(dn) break end
 		end
-		bcol = bcol or DEBUFF_COLORS[""]
+		bcol = bcol or DebuffColor("")
+	elseif threat and (aggroStyle == "BORDER" or aggroStyle == "BOTH") then
+		local agc = self.db.aggroColor or { r = 1, g = 0, b = 0 }
+		bcol = { agc.r, agc.g, agc.b }
+	elseif isCT and self.db.castHighlight ~= false then
+		local cc = self.db.castColor or { r = 1, g = 0.7, b = 0.2 }
+		bcol = { cc.r, cc.g, cc.b }
 	elseif self.db.targetHighlight and UnitIsUnit(unit, "target") then
-		bcol = { S.accent.r, S.accent.g, S.accent.b }
+		bcol = { HG.accent.r, HG.accent.g, HG.accent.b }
 	end
-	if bcol then S:SetTemplate(cell, "Default", nil, bcol) else S:SetTemplate(cell, "Default") end
-
-	-- buff watch: icon for each missing raid buff
-	if auraNames then
-		ResolveBuffWatch()
-		local w = 0
-		for _, g in pairs(buffNames) do
-			local has
-			for _, id in ipairs(g.ids) do
-				local nm = S.GetSpellInfo(id)
-				if nm and auraNames[lower(nm)] then has = true break end
-			end
-			if not has and w < MAX_BUFFWATCH then
-				w = w + 1
-				cell.buffs[w]:SetTexture(g.icon)
-				cell.buffs[w]:Show()
-			end
-		end
-		for i = w + 1, MAX_BUFFWATCH do cell.buffs[i]:Hide() end
-	else
-		for i = 1, MAX_BUFFWATCH do cell.buffs[i]:Hide() end
-	end
+	if bcol then HG:SetTemplate(cell, "Default", nil, bcol) else HG:SetTemplate(cell, "Default") end
 
 	-- range fade
 	if self.db.rangeFade and not dead then
-		local inRange = S.UnitInRange and S.UnitInRange(unit)
+		local inRange = HG.UnitInRange and HG.UnitInRange(unit)
 		cell:SetAlpha(inRange == false and (self.db.rangeAlpha or 0.4) or 1)
 	else
 		cell:SetAlpha(1)
 	end
 end
 
+-- fake cells for test mode: deterministic values derived from the index so
+-- the preview shows the full variety (dead, offline, aggro, debuffs, etc.)
+function RG:PaintTest(cell, m)
+	local i = m.test
+	local db = self.db
+	local hpMax, hp = 100, max(6, (i * 31) % 100)
+	local dead = i % 11 == 10
+	local offline = i % 13 == 12 and not dead
+	local afk = db.showAFK ~= false and i % 17 == 15 and not dead and not offline
+	if dead or offline then hp = 0 end
+	if cell.isDead ~= dead then
+		cell.isDead = dead
+		if InCombatLockdown() then
+			HG:RunOutOfCombat(self.ApplyClicksTo, self, cell)
+		else
+			self:ApplyClicksTo(cell)
+		end
+	end
+	local color = RAID_CLASS_COLORS[m.class] or { r = 0.5, g = 0.5, b = 0.5 }
+	local frac = hp / hpMax
+	cell.hp:SetMinMaxValues(0, hpMax)
+	cell.hp:SetValue(hp)
+	if dead or offline then
+		cell.hp:SetStatusBarColor(0.18, 0.18, 0.18)
+	elseif db.healthMode == "GRADIENT" then
+		cell.hp:SetStatusBarColor(GradColor(frac))
+	elseif db.healthMode == "CUSTOM" then
+		local c = db.customColor or { r = 0.2, g = 0.8, b = 0.2 }
+		cell.hp:SetStatusBarColor(c.r, c.g, c.b)
+	else
+		cell.hp:SetStatusBarColor(color.r, color.g, color.b)
+	end
+	if db.showPower and not dead and not offline then
+		local pc = POWER_COLORS[i % 3 == 0 and 1 or i % 3 == 1 and 0 or 3] or POWER_COLORS[0]
+		cell.pow:SetMinMaxValues(0, 100)
+		cell.pow:SetValue((i * 53) % 100)
+		cell.pow:SetStatusBarColor(pc[1], pc[2], pc[3])
+		cell.pow:Show()
+	else
+		cell.pow:Hide()
+	end
+	cell.role:SetText(db.showRole ~= false and (ROLE_MARK[m.role] or "") or "")
+	local dispName = m.name
+	local maxLen = db.nameMaxLen or 0
+	if maxLen > 0 and dispName:len() > maxLen then dispName = dispName:sub(1, maxLen) end
+	if dead then
+		cell.name:SetText("|cff888888" .. dispName .. "|r")
+		cell.hpText:SetText(L["Dead"])
+	elseif offline then
+		cell.name:SetText("|cff888888" .. dispName .. "|r")
+		cell.hpText:SetText(L["Offline"])
+	elseif afk then
+		cell.name:SetText("|cff888888" .. dispName .. "|r")
+		cell.hpText:SetText(L["AFK"])
+	else
+		cell.name:SetText(dispName)
+		local lm = db.lifeMode or "PERCENT"
+		if lm == "NONE" then
+			cell.hpText:SetText("")
+		elseif lm == "DEFICIT" then
+			local def = hp - hpMax
+			cell.hpText:SetText(def < 0 and format("|cffff7766%d|r", def) or "")
+		elseif lm == "BOTH" then
+			local def = hp - hpMax
+			cell.hpText:SetText(def < 0 and format("|cffff7766%d|r  %d%%", def, frac * 100) or format("%d%%", frac * 100))
+		else
+			cell.hpText:SetText(format("%d%%", frac * 100))
+		end
+	end
+	-- preview overlays on a subset of cells
+	if db.showIncHeal and i % 4 == 1 and hp < hpMax then
+		cell.inc:SetReverseFill(false)
+		cell.inc:SetPoint("LEFT", cell.hp, "LEFT", min(cell.hp:GetWidth(), frac * cell.hp:GetWidth()), 0)
+		cell.inc:SetMinMaxValues(0, hpMax - hp)
+		cell.inc:SetValue(min(hpMax - hp, 15))
+		cell.inc:Show()
+	else
+		cell.inc:Hide()
+	end
+	if db.showAbsorb and i % 9 == 4 then
+		cell.abs:SetMinMaxValues(0, hpMax)
+		cell.abs:SetValue(20)
+		cell.abs:Show()
+	else
+		cell.abs:Hide()
+	end
+	local threat = i % 7 == 2
+	local aggroStyle = db.aggroStyle or "DOT"
+	cell.aggro:SetShown(threat and (aggroStyle == "DOT" or aggroStyle == "BOTH"))
+	if db.showRaidIcon ~= false and i % 8 == 1 then
+		cell.raidIcon:Show()
+		SetRaidTargetIconTexture(cell.raidIcon, ((i - 1) % 8) + 1)
+	else
+		cell.raidIcon:Hide()
+	end
+	cell.ready:Hide()
+	cell.res:SetShown(db.showResIcon ~= false and dead)
+	local dN = 0
+	if db.showDebuffs and i % 3 == 1 then
+		local cnt = (i % 3) + 1
+		for d = 1, min(cnt, MAX_DEBUFFS) do
+			local dn = TEST_DISPELS[((i + d - 2) % #TEST_DISPELS) + 1]
+			local tex = SpellIcon(TEST_SPELLS[((i + d - 2) % #TEST_SPELLS) + 1])
+			dN = dN + 1
+			if tex then cell.debuffs[dN]:SetTexture(tex) end
+			cell.debuffs[dN].dispel = dn
+			cell.debuffs[dN]:Show()
+		end
+	end
+	for d = dN + 1, MAX_DEBUFFS do cell.debuffs[d]:Hide() cell.debuffs[d].dispel = nil end
+	-- preview the optional extras on a subset of cells
+	if db.showHotCorner and i % 5 == 3 then
+		local c = db.hotColor or { r = 0.2, g = 0.9, b = 0.4 }
+		cell.hot:SetColorTexture(c.r, c.g, c.b, 1)
+		cell.hot:Show()
+	else
+		cell.hot:Hide()
+	end
+	if self.hlSet and dN > 0 then
+		cell.bigDebuff:SetTexture(cell.debuffs[1]:GetTexture())
+		cell.bigDebuff:Show()
+	else
+		cell.bigDebuff:Hide()
+	end
+	if db.showCastbar ~= false and i == 7 then
+		cell.cast.dur, cell.cast.endT = 3, GetTime() + 1.1
+		cell.cast:SetMinMaxValues(0, 3)
+		cell.cast:Show()
+	else
+		cell.cast:Hide()
+	end
+	local bcol
+	if dN > 0 and db.showDebuffs then
+		for d = 1, dN do
+			local dn = cell.debuffs[d].dispel
+			if dn then bcol = DebuffColor(dn) break end
+		end
+		bcol = bcol or DebuffColor("")
+	elseif threat and (aggroStyle == "BORDER" or aggroStyle == "BOTH") then
+		local agc = db.aggroColor or { r = 1, g = 0, b = 0 }
+		bcol = { agc.r, agc.g, agc.b }
+	elseif db.targetHighlight and i == 1 then
+		bcol = { HG.accent.r, HG.accent.g, HG.accent.b }
+	end
+	if bcol then HG:SetTemplate(cell, "Default", nil, bcol) else HG:SetTemplate(cell, "Default") end
+	cell:SetAlpha(db.rangeFade and i % 6 == 5 and (db.rangeAlpha or 0.4) or 1)
+end
+
 function RG:Layout()
 	local f = self.frame
 	if not f then return end
-	local w, h, sp, gsp = self.db.barW, self.db.barH, self.db.spacing, self.db.groupSpacing
-	local scale = self.db.scale or 1
-	local gx = self.db.growthX == "LEFT" and -1 or 1
-	local gy = self.db.growthY == "UP" and 1 or -1
+	local db = self.db
+	local w, h, sp, gsp = db.barW, db.barH, db.spacing, db.groupSpacing
+	local scale = db.scale or 1
+	local gx = db.growthX == "LEFT" and -1 or 1
+	local gy = db.growthY == "UP" and 1 or -1
+	local vert = db.orientation == "VERTICAL"
+	local tex = db.barStyle == "DEFAULT" and "Interface\\TargetingFrame\\UI-StatusBar" or HG.media.statusbar
 	for g = 1, MAX_GROUPS do
 		local col = gx == 1 and (g - 1) or (MAX_GROUPS - g)
 		for r = 1, MAX_ROWS do
@@ -749,109 +1184,135 @@ function RG:Layout()
 			local row = gy == -1 and (r - 1) or (MAX_ROWS - r)
 			cell:SetSize(w, h)
 			cell:ClearAllPoints()
-			cell:SetPoint("TOPLEFT", 4 + col * (w + gsp), -(4 + row * (h + sp)))
+			if vert then
+				-- groups as rows: cells inside a group grow horizontally
+				cell:SetPoint("TOPLEFT", 4 + row * (w + sp), -(4 + col * (h + gsp)))
+			else
+				cell:SetPoint("TOPLEFT", 4 + col * (w + gsp), -(4 + row * (h + sp)))
+			end
+			-- per-cell skinning options
+			cell.hp:SetStatusBarTexture(tex)
+			cell.hp.bg:SetTexture(tex)
+			cell.inc:SetStatusBarTexture(tex)
+			cell.abs:SetStatusBarTexture(tex)
+			cell.pow:SetStatusBarTexture(tex)
+			local bgc = db.bgColor or { r = 0.08, g = 0.08, b = 0.08 }
+			cell.hp.bg:SetVertexColor(bgc.r, bgc.g, bgc.b, db.bgAlpha or 0.9)
+			local ic = db.incColor or { r = 0.2, g = 0.8, b = 0.2 }
+			cell.inc:SetStatusBarColor(ic.r, ic.g, ic.b, 0.4)
+			local ac = db.absColor or { r = 1, g = 0.85, b = 0.2 }
+			cell.abs:SetStatusBarColor(ac.r, ac.g, ac.b, 0.45)
+			local agc = db.aggroColor or { r = 1, g = 0, b = 0 }
+			cell.aggro:SetColorTexture(agc.r, agc.g, agc.b, 0.85)
+			local ccol = db.castColor or { r = 1, g = 0.7, b = 0.2 }
+			cell.cast:SetStatusBarColor(ccol.r, ccol.g, ccol.b, 0.9)
+			cell.bigDebuff:SetSize((db.debuffSize or 12) * 2, (db.debuffSize or 12) * 2)
+			cell.pow:SetHeight(db.powerHeight or 3)
+			HG:SetFont(cell.name, nil, db.nameSize or 10, "OUTLINE")
+			HG:SetFont(cell.hpText, nil, db.lifeSize or 9, "OUTLINE")
+			HG:SetFont(cell.role, nil, db.lifeSize or 9, "OUTLINE")
+			local ds = db.debuffSize or 12
+			for i = 1, MAX_DEBUFFS do
+				local t = cell.debuffs[i]
+				t:SetSize(ds, ds)
+				t:ClearAllPoints()
+				t:SetPoint("TOPRIGHT", -(2 + (i - 1) * (ds + 1)), -2)
+			end
 		end
 	end
-	f:SetSize(8 + MAX_GROUPS * w + (MAX_GROUPS - 1) * gsp, 8 + MAX_ROWS * h + (MAX_ROWS - 1) * sp)
-	f:SetScale(scale)
-	f:SetAlpha(self.db.frameAlpha or 1)
+	if vert then
+		f:SetSize(8 + MAX_ROWS * w + (MAX_ROWS - 1) * sp, 8 + MAX_GROUPS * h + (MAX_GROUPS - 1) * gsp)
+	else
+		f:SetSize(8 + MAX_GROUPS * w + (MAX_GROUPS - 1) * gsp, 8 + MAX_ROWS * h + (MAX_ROWS - 1) * sp)
+	end
+	local ctxf = IsInRaid() and (db.scaleRaid or 1)
+		or (IsInGroup() and (db.scaleParty or 1) or (db.scaleSolo or 1))
+	f:SetScale(scale * ctxf)
+	f:SetAlpha(db.frameAlpha or 1)
+	f.anchor:SetShown(not db.hideAnchor)
 end
 
 function RG:Refresh()
 	local f = self.frame
 	if not f or not f:IsShown() then return end
+	self.hlSet = ParseIDSet(self.db.highlightSpells)
 	self:Collect()
+	-- visibility rule failed: hide the whole frame; Tick re-shows it when the
+	-- rule matches again (wantShown)
+	if not self:ShouldShow() then f:Hide() return end
 	local maxUsed = 0
 	local combat = InCombatLockdown()
 	local function PaintCell(cell, m)
 		local ok, err = pcall(self.Paint, self, cell, m)
 		if not ok and not self.paintErrLogged then
 			self.paintErrLogged = true
-			S:LogError(tostring(err), "RaidGrid:Paint")
+			HG:LogError(tostring(err), "HealGrid:Paint")
 		end
 	end
+	local count = 0
 	for g = 1, MAX_GROUPS do
 		local list = members[g]
-		if list and #list > 0 then maxUsed = g end
-	end
-	if combat then
-		-- protected cells: no Show/Hide/SetAttribute. Unit watch already shows
-		-- a cell whose unit exists and hides it when the unit is gone, so just
-		-- repaint every visible cell from the member that owns its unit now
-		-- (matched by unit, not by grid position) and alpha-hide strays
-		local byUnit = {}
-		for _, list in pairs(members) do
-			for _, m in ipairs(list) do byUnit[m.unit] = m end
-		end
-		for g = 1, MAX_GROUPS do
-			for r = 1, MAX_ROWS do
-				local cell = self.cells[g][r]
-				if cell:IsShown() then
-					local m = cell.unit and byUnit[cell.unit]
-					if m then
-						cell.m = m
-						PaintCell(cell, m)
-					else
-						cell:SetAlpha(0)
-						self.combatDirty = true
-					end
-				end
-			end
-		end
-	else
-		-- free cells are bound to the tokens nobody uses yet, so someone who
-		-- joins during combat appears in the first free cell by unit watch
-		local spare, si = {}, 1
-		if IsInRaid() then
-			for k = 1, 40 do if not UnitExists("raid" .. k) then spare[#spare + 1] = "raid" .. k end end
-		else
-			for k = 1, 4 do if not UnitExists("party" .. k) then spare[#spare + 1] = "party" .. k end end
-		end
-		for g = 1, MAX_GROUPS do
-			local list = members[g]
-			for r = 1, MAX_ROWS do
-				local cell, m = self.cells[g][r], list and list[r]
-				if m then
-					if cell.unit ~= m.unit then
-						cell.unit = m.unit
-						cell:SetAttribute("unit", m.unit)
-						self:ApplyClicksTo(cell)
-					end
+		if list and #list > 0 then maxUsed = g count = count + #list end
+		for r = 1, MAX_ROWS do
+			local cell, m = self.cells[g][r], list and list[r]
+			if combat then
+				-- protected frames: Show/Hide/SetAttribute are blocked in combat.
+				-- Repaint slots still showing the same unit, alpha-hide the rest
+				-- and re-layout after combat.
+				if m and cell:IsShown() and cell.unit == m.unit then
 					cell.m = m
-					cell:Show()
 					PaintCell(cell, m)
-				else
-					local tok = spare[si]
-					si = si + 1
-					if cell.unit ~= tok then
-						cell.unit = tok
-						cell:SetAttribute("unit", tok)
-						self:ApplyClicksTo(cell)
-					end
-					cell.m = nil
-					if not tok then cell:Hide() end
+				elseif cell:IsShown() then
+					cell:SetAlpha(0)
+					self.combatDirty = true
 				end
+			elseif m then
+				if cell.unit ~= m.unit then
+					cell.unit = m.unit
+					cell:SetAttribute("unit", m.unit)
+					self:ApplyClicksTo(cell)
+				end
+				cell.m = m
+				cell:Show()
+				PaintCell(cell, m)
+			else
+				cell:Hide()
 			end
 		end
 	end
+	-- hide the grid during combat when requested (alpha only — combat safe)
+	f:SetAlpha(combat and self.db.hideInCombat and 0 or (self.db.frameAlpha or 1))
 	-- shrink the panel to the populated columns when hideEmpty is on
 	if not combat and self.db.hideEmpty and maxUsed > 0 then
 		local w, h, sp, gsp = self.db.barW, self.db.barH, self.db.spacing, self.db.groupSpacing
-		f:SetSize(8 + maxUsed * w + (maxUsed - 1) * gsp, 8 + MAX_ROWS * h + (MAX_ROWS - 1) * sp)
+		if self.db.orientation == "VERTICAL" then
+			f:SetSize(8 + MAX_ROWS * w + (MAX_ROWS - 1) * sp, 8 + maxUsed * h + (maxUsed - 1) * gsp)
+		else
+			f:SetSize(8 + maxUsed * w + (maxUsed - 1) * gsp, 8 + MAX_ROWS * h + (MAX_ROWS - 1) * sp)
+		end
 	end
 	-- deferred fixup once combat ends (re-run is throttled: only one queued)
 	if combat and self.combatDirty and not self._regenQueued then
 		self._regenQueued = true
-		S:RunOutOfCombat(function()
+		HG:RunOutOfCombat(function()
 			self._regenQueued, self.combatDirty = nil, nil
 			self:Layout()
 			self:ApplyClicks()
 			self:Refresh()
 		end)
 	end
+	self.lastCount, self.lastGroups = count, maxUsed
+	self:UpdateStatus()
 end
 
--- dedicated options window (own frame, not inside /sui) ----------------------
+function RG:UpdateStatus()
+	if self.cfg and self.cfg.status then
+		self.cfg.status:SetText(format("|cff888888%d %s · %d %s|r",
+			self.lastCount or 0, L["cells"], self.lastGroups or 0, L["groups"]))
+	end
+end
+
+-- dedicated options window (own frame) --------------------------------------
 local CC_MOD_ORDER = { "none", "shift", "ctrl", "alt" }
 local CC_MOD_LABEL = { none = "–", shift = "Shift", ctrl = "Ctrl", alt = "Alt" }
 local CC_BTN_ORDER = { "1", "2", "3", "4", "5" }
@@ -867,8 +1328,8 @@ end
 local function CycleBtn(parent, w, label, tooltip)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(w, 20)
-	S:SkinButton(b)
-	b.txt = S:FontString(b, 10, "OUTLINE")
+	HG:SkinButton(b)
+	b.txt = HG:FontString(b, 10, "OUTLINE")
 	b.txt:SetPoint("CENTER")
 	b.txt:SetText(label)
 	return b
@@ -878,35 +1339,35 @@ local function CheckRow(parent, key, label, y)
 	local cb = CreateFrame("CheckButton", nil, parent, "UICheckButtonTemplate")
 	cb:SetPoint("TOPLEFT", 6, y)
 	cb:SetSize(20, 20)
-	S:SkinCheckBox(cb)
-	cb:SetChecked(S.db.profile.raidgrid[key] and true or false)
+	HG:SkinCheckBox(cb)
+	cb:SetChecked(HG.db[key] and true or false)
 	cb:SetScript("OnClick", function(c)
-		S.db.profile.raidgrid[key] = c:GetChecked() and true or false
+		HG.db[key] = c:GetChecked() and true or false
 		RG:Update()
 	end)
-	local t = S:FontString(cb, 10)
+	local t = HG:FontString(cb, 10)
 	t:SetPoint("LEFT", cb, "RIGHT", 4, 0)
 	t:SetText(label)
 	return cb
 end
 
 local function SliderRow(parent, key, label, mn, mx, step, y, isScale)
-	local name = "SentinelUIRGSlider" .. key
+	local name = "SentinelUIRaidGridSlider" .. key
 	local sl = CreateFrame("Slider", name, parent, "OptionsSliderTemplate")
 	sl:SetPoint("TOPLEFT", 16, y)
 	sl:SetSize(190, 14)
 	sl:SetMinMaxValues(mn, mx)
 	sl:SetValueStep(step)
 	sl:SetObeyStepOnDrag(true)
-	sl:SetValue(S.db.profile.raidgrid[key])
-	S:SkinSlider(sl)
-	_G[name .. "Text"]:SetText(label .. ": " .. format(isScale and "%.2f" or "%d", S.db.profile.raidgrid[key]))
+	sl:SetValue(HG.db[key])
+	HG:SkinSlider(sl)
+	_G[name .. "Text"]:SetText(label .. ": " .. format(isScale and "%.2f" or "%d", HG.db[key]))
 	_G[name .. "Low"]:SetText(tostring(mn))
 	_G[name .. "High"]:SetText(tostring(mx))
 	sl:SetScript("OnValueChanged", function(_, v)
 		v = floor(v / step + 0.5) * step
-		if S.db.profile.raidgrid[key] ~= v then
-			S.db.profile.raidgrid[key] = v
+		if HG.db[key] ~= v then
+			HG.db[key] = v
 			_G[name .. "Text"]:SetText(label .. ": " .. format(isScale and "%.2f" or "%d", v))
 			RG:Update()
 		end
@@ -915,7 +1376,7 @@ local function SliderRow(parent, key, label, mn, mx, step, y, isScale)
 end
 
 local function BindingRow(parent, idx, y)
-	local B = function() return S.db.profile.raidgrid.clickCast.bindings[idx] end
+	local B = function() return HG.db.clickCast.bindings[idx] end
 	local row = CreateFrame("Frame", nil, parent)
 	row:SetPoint("TOPLEFT", 0, y)
 	row:SetSize(430, 24)
@@ -950,7 +1411,7 @@ local function BindingRow(parent, idx, y)
 	row.val:SetAutoFocus(false)
 	row.val:SetText(B().value or "")
 	row.val:SetFontObject("GameFontHighlightSmall")
-	S:SkinEditBox(row.val)
+	HG:SkinEditBox(row.val)
 	row.val:SetScript("OnEnterPressed", function(e) B().value = strtrim(e:GetText()) e:ClearFocus() row.pick.txt:SetText(row.pick:Label()) RG:Update() end)
 	row.val:SetScript("OnEditFocusLost", function(e) B().value = strtrim(e:GetText()) row.pick.txt:SetText(row.pick:Label()) RG:Update() end)
 
@@ -979,109 +1440,425 @@ local function BindingRow(parent, idx, y)
 	row.del = CreateFrame("Button", nil, row)
 	row.del:SetPoint("LEFT", row.pick, "RIGHT", 4, 0)
 	row.del:SetSize(18, 18)
-	S:SkinButton(row.del)
-	local dtxt = S:FontString(row.del, 10, "OUTLINE")
+	HG:SkinButton(row.del)
+	local dtxt = HG:FontString(row.del, 10, "OUTLINE")
 	dtxt:SetPoint("CENTER")
 	dtxt:SetText("x")
 	row.del:SetScript("OnClick", function()
-		tremove(S.db.profile.raidgrid.clickCast.bindings, idx)
+		tremove(HG.db.clickCast.bindings, idx)
 		RG:RefreshConfig() RG:Update()
 	end)
 	return row
 end
 
 local function OptRow(parent, key, label, order, labels, y)
-	local t = S:FontString(parent, 10)
+	local t = HG:FontString(parent, 10)
 	t:SetPoint("TOPLEFT", 16, y)
 	t:SetText(label)
-	local b = CycleBtn(parent, 110, labels[S.db.profile.raidgrid[key]] or S.db.profile.raidgrid[key])
+	local b = CycleBtn(parent, 110, labels[HG.db[key]] or HG.db[key])
 	b:SetPoint("LEFT", t, "RIGHT", 10, 0)
 	b:SetScript("OnClick", function()
-		S.db.profile.raidgrid[key] = CycleVal(order, S.db.profile.raidgrid[key])
-		b.txt:SetText(labels[S.db.profile.raidgrid[key]] or S.db.profile.raidgrid[key])
+		HG.db[key] = CycleVal(order, HG.db[key])
+		b.txt:SetText(labels[HG.db[key]] or HG.db[key])
 		RG:Update()
 	end)
 	return b
 end
 
+local function ColorRow(parent, key, label, y, container)
+	local store = container or HG.db
+	local t = HG:FontString(parent, 10)
+	t:SetPoint("TOPLEFT", 16, y)
+	t:SetText(label)
+	local sw = CreateFrame("Button", nil, parent)
+	sw:SetSize(22, 20)
+	sw:SetPoint("LEFT", t, "RIGHT", 10, 0)
+	HG:SkinButton(sw)
+	local tex = sw:CreateTexture(nil, "OVERLAY")
+	local c = store[key] or { r = 1, g = 1, b = 1 }
+	tex:SetColorTexture(c.r, c.g, c.b)
+	HG:SetInside(tex, sw, 3, 3)
+	sw:SetScript("OnClick", function()
+		HG:PickColor(store[key] or {}, function(r, g, b)
+			store[key] = { r = r, g = g, b = b }
+			tex:SetColorTexture(r, g, b)
+			RG:Update()
+		end)
+	end)
+	return sw
+end
+
+-- read-only editbox that selects its contents on focus so URLs can be copied
+local function LinkRow(parent, label, url, y)
+	local t = HG:FontString(parent, 10)
+	t:SetPoint("TOPLEFT", 16, y)
+	t:SetText(label)
+	local eb = CreateFrame("EditBox", nil, parent)
+	eb:SetPoint("LEFT", t, "RIGHT", 10, 0)
+	eb:SetSize(190, 20)
+	eb:SetAutoFocus(false)
+	eb:SetText(url)
+	eb:SetFontObject("GameFontHighlightSmall")
+	HG:SkinEditBox(eb)
+	eb:SetScript("OnEditFocusGained", function(e) e:HighlightText() end)
+	eb:SetScript("OnEscapePressed", function(e) e:ClearFocus() end)
+	eb:SetScript("OnEnterPressed", function(e) e:ClearFocus() end)
+	eb:SetScript("OnTextChanged", function(e, user)
+		if user then e:SetText(url) e:HighlightText() end
+	end)
+	return eb
+end
+
+-- free-text editbox writing into a db key (spell id lists, macro text, ...)
+local function EditRow(parent, key, label, y)
+	local t = HG:FontString(parent, 10)
+	t:SetPoint("TOPLEFT", 16, y)
+	t:SetText(label)
+	local eb = CreateFrame("EditBox", nil, parent)
+	eb:SetPoint("LEFT", t, "RIGHT", 10, 0)
+	eb:SetSize(150, 20)
+	eb:SetAutoFocus(false)
+	eb:SetText(HG.db[key] or "")
+	eb:SetFontObject("GameFontHighlightSmall")
+	HG:SkinEditBox(eb)
+	local function apply(e)
+		HG.db[key] = strtrim(e:GetText())
+		RG:Update()
+	end
+	eb:SetScript("OnEnterPressed", function(e) apply(e) e:ClearFocus() end)
+	eb:SetScript("OnEditFocusLost", apply)
+	eb:SetScript("OnEscapePressed", function(e) e:SetText(HG.db[key] or "") e:ClearFocus() end)
+	return eb
+end
+
+local function PlainBtn(parent, w, label, x, y)
+	local b = CreateFrame("Button", nil, parent)
+	b:SetPoint("TOPLEFT", x, y)
+	b:SetSize(w, 20)
+	HG:SkinButton(b)
+	b.txt = HG:FontString(b, 10, "OUTLINE")
+	b.txt:SetPoint("CENTER")
+	b.txt:SetText(label)
+	return b
+end
+
+-- rebuild the whole options window (after profile load / reset)
+function RG:RebuildConfig()
+	if self.cfg then self.cfg:Hide() self.cfg = nil end
+	local nf = self:BuildConfig()
+	self:RefreshConfig()
+	self:Update()
+	nf:Show()
+end
+
 function RG:BuildConfig()
 	if self.cfg then return self.cfg end
-	local f = CreateFrame("Frame", "SentinelUIRaidGridConfig", UIParent, S.BackdropTemplate)
-	f:SetSize(560, 660)
+	local f = CreateFrame("Frame", "SentinelUIRaidGridConfig", UIParent, HG.BackdropTemplate)
+	f:SetSize(720, 430)
 	f:SetPoint("CENTER")
 	f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
 	f:SetClampedToScreen(true) f:SetFrameStrata("DIALOG") f:SetToplevel(true)
 	f:SetScript("OnDragStart", f.StartMoving)
 	f:SetScript("OnDragStop", f.StopMovingOrSizing)
-	S:SkinFrame(f, "Default")
-	local title = S:FontString(f, 13, "OUTLINE")
+	HG:SkinFrame(f, "Default")
+	local title = HG:FontString(f, 13, "OUTLINE")
 	title:SetPoint("TOP", 0, -10)
-	title:SetText("|cff" .. S.accentHex .. "HealGrid|r  " .. L["Settings"])
+	title:SetText("|cff" .. HG.accentHex .. "HealGrid|r  " .. L["Settings"])
 	local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
 	close:SetPoint("TOPRIGHT", -6, -6)
-	S:SkinCloseButton(close)
+	HG:SkinCloseButton(close)
 	close:SetScript("OnClick", function() f:Hide() end)
 	tinsert(UISpecialFrames, "SentinelUIRaidGridConfig")
 
-	-- left: toggles ----------------------------------------------------------
-	local left = CreateFrame("Frame", nil, f)
-	left:SetPoint("TOPLEFT", 8, -34)
-	left:SetSize(240, 354)
-	local lh = S:FontString(left, 11, "OUTLINE")
-	lh:SetPoint("TOPLEFT", 0, 0)
-	lh:SetText("|cff" .. S.accentHex .. (L["Show"] or "Show") .. "|r")
-	local toggles = {
-		{ "showWhenSolo", L["Show When Solo"] }, { "showPower", L["Show Power"] },
-		{ "showDebuffs", L["Show Debuffs"] }, { "showHots", L["Show Hots"] },
-		{ "showIncHeal", L["Show Inc Heal"] }, { "showAbsorb", L["Show Absorb"] },
-		{ "buffWatch", L["Buff Watch"] }, { "showReadyCheck", L["Show Ready Check"] },
-		{ "targetHighlight", L["Target Highlight"] }, { "unitTooltip", L["Unit Tooltip"] },
-		{ "rangeFade", L["Range Fade"] }, { "showDeficit", L["Show Deficit"] },
-		{ "rezOnDead", L["Rez On Dead"] },
-		{ "hideEmpty", L["Hide Empty"] }, { "lockFrame", L["Lock Frame"] },
-	}
-	for i, t in ipairs(toggles) do CheckRow(left, t[1], t[2], -18 - (i - 1) * 24) end
+	-- tabbed pages --------------------------------------------------------------
+	f.pages, f.tabs = {}, {}
+	local function SelectTab(i)
+		for n, p in ipairs(f.pages) do p:SetShown(n == i) end
+		for n, tb in ipairs(f.tabs) do
+			tb.txt:SetTextColor(1, 1, 1)
+			if n == i then tb.txt:SetTextColor(HG.accent.r, HG.accent.g, HG.accent.b) end
+		end
+	end
+	local tabDefs = { "General", "Layout", "Bars", "Text", "Icons", "Colors", "Click Cast", "Profiles", "About" }
+	for i, name in ipairs(tabDefs) do
+		local tb = CreateFrame("Button", nil, f)
+		tb:SetSize(74, 20)
+		tb:SetPoint("TOPLEFT", 8 + (i - 1) * 78, -32)
+		HG:SkinButton(tb)
+		tb.txt = HG:FontString(tb, 9, "OUTLINE")
+		tb.txt:SetPoint("CENTER")
+		tb.txt:SetText(L[name])
+		tb:SetScript("OnClick", function() SelectTab(i) end)
+		f.tabs[i] = tb
+		local p = CreateFrame("Frame", nil, f)
+		p:SetPoint("TOPLEFT", 8, -60)
+		p:SetPoint("BOTTOMRIGHT", -8, 28)
+		p:Hide()
+		f.pages[i] = p
+	end
+	SelectTab(1)
 
-	-- right: sliders -----------------------------------------------------------
-	local right = CreateFrame("Frame", nil, f)
-	right:SetPoint("TOPLEFT", left, "TOPRIGHT", 12, 0)
-	right:SetSize(300, 200)
-	local rh = S:FontString(right, 11, "OUTLINE")
-	rh:SetPoint("TOPLEFT", 0, 0)
-	rh:SetText("|cff" .. S.accentHex .. (L["Layout"] or "Layout") .. "|r")
-	SliderRow(right, "barW", L["Bar W"], 24, 200, 1, -34)
-	SliderRow(right, "barH", L["Bar H"], 12, 80, 1, -66)
-	SliderRow(right, "spacing", L["Spacing"], 0, 20, 1, -98)
-	SliderRow(right, "groupSpacing", L["Group Spacing"], 0, 40, 1, -130)
-	SliderRow(right, "scale", L["Scale"], 0.4, 2, 0.05, -162, true)
-	OptRow(right, "growthX", L["Groups grow"], { "RIGHT", "LEFT" },
-		{ RIGHT = L["Right"], LEFT = L["Left"] }, -196)
-	OptRow(right, "growthY", L["Cells grow"], { "DOWN", "UP" },
-		{ DOWN = L["Down"], UP = L["Up"] }, -222)
-	OptRow(right, "sortMethod", L["Sort by"], { "INDEX", "NAME" },
-		{ INDEX = L["Index"], NAME = L["Name"] }, -248)
-	OptRow(right, "healthMode", L["Health color"], { "CLASS", "GRADIENT" },
-		{ CLASS = L["Class colored bar"], GRADIENT = L["Health gradient (green to red)"] }, -274)
+	-- footer: live status + global reset
+	f.status = HG:FontString(f, 9)
+	f.status:SetPoint("BOTTOMLEFT", 10, 9)
+	local rst = PlainBtn(f, 70, L["Reset"], 0, 0)
+	rst:ClearAllPoints()
+	rst:SetPoint("BOTTOMRIGHT", -10, 6)
+	rst:SetScript("OnClick", function()
+		HG:ResetSettings()
+		RG:RebuildConfig()
+	end)
 
-	-- bottom: click-cast bindings ----------------------------------------------
-	local bot = CreateFrame("Frame", nil, f)
-	bot:SetPoint("TOPLEFT", left, "BOTTOMLEFT", 0, -6)
-	bot:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -10, 8)
-	local bh = S:FontString(bot, 11, "OUTLINE")
+	-- two ~296px columns per page; all row helpers anchor inside the column
+	local function Col(p, n)
+		local c = CreateFrame("Frame", nil, p)
+		c:SetPoint("TOPLEFT", (n - 1) * 302, 0)
+		c:SetSize(296, 10)
+		return c
+	end
+
+	-- 1: general ------------------------------------------------------------------
+	do
+		local p = f.pages[1]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		local t = {
+			{ "showWhenSolo", L["Show When Solo"] }, { "hideEmpty", L["Hide Empty"] },
+			{ "hideInCombat", L["Hide In Combat"] }, { "lockFrame", L["Lock Frame"] },
+			{ "unitTooltip", L["Unit Tooltip"] }, { "targetHighlight", L["Target Highlight"] },
+			{ "showAFK", L["Show AFK"] }, { "showPets", L["Show Pets"] },
+			{ "hideAnchor", L["Hide Anchor"] }, { "macroPad", L["Macro Pad"] },
+		}
+		for i, v in ipairs(t) do CheckRow(c1, v[1], v[2], -18 - (i - 1) * 24) end
+		EditRow(c1, "macroPadText", L["Macro"], -264)
+		OptRow(c2, "visMode", L["Visibility"], { "ALWAYS", "GROUP", "RAID" },
+			{ ALWAYS = L["Always"], GROUP = L["Group"], RAID = L["Raid"] }, -18)
+		OptRow(c2, "testSize", L["Test Mode"], { 0, 5, 10, 20, 25, 40 },
+			{ [0] = L["Off"] }, -44)
+		SliderRow(c2, "scale", L["Scale"], 0.4, 2, 0.05, -78, true)
+		SliderRow(c2, "frameAlpha", L["Opacity"], 0.2, 1, 0.05, -110, true)
+	end
+
+	-- 2: layout ---------------------------------------------------------------------
+	do
+		local p = f.pages[2]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		SliderRow(c1, "barW", L["Bar W"], 24, 200, 1, -18)
+		SliderRow(c1, "barH", L["Bar H"], 12, 80, 1, -50)
+		SliderRow(c1, "spacing", L["Spacing"], 0, 20, 1, -82)
+		SliderRow(c1, "groupSpacing", L["Group Spacing"], 0, 40, 1, -114)
+		SliderRow(c1, "powerHeight", L["Power Height"], 0, 12, 1, -146)
+		OptRow(c2, "growthX", L["Groups grow"], { "RIGHT", "LEFT" },
+			{ RIGHT = L["Right"], LEFT = L["Left"] }, -18)
+		OptRow(c2, "growthY", L["Cells grow"], { "DOWN", "UP" },
+			{ DOWN = L["Down"], UP = L["Up"] }, -44)
+		OptRow(c2, "orientation", L["Orientation"], { "HORIZONTAL", "VERTICAL" },
+			{ HORIZONTAL = L["Horizontal"], VERTICAL = L["Vertical"] }, -70)
+		OptRow(c2, "sortMethod", L["Sort by"], { "INDEX", "NAME", "ROLE" },
+			{ INDEX = L["Index"], NAME = L["Name"], ROLE = L["Role"] }, -96)
+		SliderRow(c2, "scaleSolo", L["Scale Solo"], 0.4, 2, 0.05, -130, true)
+		SliderRow(c2, "scaleParty", L["Scale Party"], 0.4, 2, 0.05, -162, true)
+		SliderRow(c2, "scaleRaid", L["Scale Raid"], 0.4, 2, 0.05, -194, true)
+	end
+
+	-- 3: bars ------------------------------------------------------------------------
+	do
+		local p = f.pages[3]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		local t = {
+			{ "showPower", L["Show Power"] }, { "showIncHeal", L["Show Inc Heal"] },
+			{ "showAbsorb", L["Show Absorb"] }, { "rangeFade", L["Range Fade"] },
+			{ "castHighlight", L["Cast Highlight"] }, { "showCastbar", L["Show Castbar"] },
+			{ "showHotCorner", L["Hot Corner"] },
+		}
+		for i, v in ipairs(t) do CheckRow(c1, v[1], v[2], -18 - (i - 1) * 24) end
+		SliderRow(c1, "rangeAlpha", L["Range Alpha"], 0, 1, 0.05, -202, true)
+		SliderRow(c1, "bgAlpha", L["Bg Alpha"], 0, 1, 0.05, -234, true)
+		OptRow(c2, "healthMode", L["Health color"], { "CLASS", "GRADIENT", "CUSTOM" },
+			{ CLASS = L["Class colored bar"], GRADIENT = L["Health gradient (green to red)"], CUSTOM = L["Custom"] }, -18)
+		OptRow(c2, "barStyle", L["Bar Texture"], { "FLAT", "DEFAULT" },
+			{ FLAT = L["Flat"], DEFAULT = L["Default"] }, -44)
+	end
+
+	-- 4: text --------------------------------------------------------------------------
+	do
+		local p = f.pages[4]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		SliderRow(c1, "nameSize", L["Name Size"], 6, 20, 1, -18)
+		SliderRow(c1, "lifeSize", L["Life Size"], 6, 16, 1, -50)
+		SliderRow(c1, "nameMaxLen", L["Name Length"], 0, 20, 1, -82)
+		OptRow(c2, "lifeMode", L["Life Text"], { "PERCENT", "DEFICIT", "BOTH", "NONE" },
+			{ PERCENT = L["Percent"], DEFICIT = L["Deficit"], BOTH = L["Both"], NONE = L["None"] }, -18)
+		CheckRow(c2, "showRole", L["Show Role"], -50)
+	end
+
+	-- 5: icons --------------------------------------------------------------------------
+	do
+		local p = f.pages[5]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		local t = {
+			{ "showDebuffs", L["Show Debuffs"] }, { "onlyDispellable", L["Dispellable Only"] },
+			{ "showRaidIcon", L["Show Raid Icon"] }, { "showResIcon", L["Show Res Icon"] },
+			{ "showReadyCheck", L["Show Ready Check"] }, { "rezOnDead", L["Rez On Dead"] },
+		}
+		for i, v in ipairs(t) do CheckRow(c1, v[1], v[2], -18 - (i - 1) * 24) end
+		SliderRow(c2, "debuffSize", L["Debuff Size"], 6, 24, 1, -18)
+		OptRow(c2, "aggroStyle", L["Aggro"], { "DOT", "BORDER", "BOTH", "NONE" },
+			{ DOT = L["Dot"], BORDER = L["Border"], BOTH = L["Both"], NONE = L["None"] }, -52)
+		OptRow(c2, "dispelAlert", L["Dispel Alert"], { "NONE", "SOUND", "FLASH", "BOTH" },
+			{ NONE = L["None"], SOUND = L["Sound"], FLASH = L["Flash"], BOTH = L["Both"] }, -78)
+		EditRow(c2, "highlightSpells", L["Highlight IDs"], -108)
+	end
+
+	-- 6: colors ---------------------------------------------------------------------------
+	do
+		local p = f.pages[6]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		local h1 = HG:FontString(c1, 10, "OUTLINE")
+		h1:SetPoint("TOPLEFT", 16, -14)
+		h1:SetText("|cff" .. HG.accentHex .. (L["Bars"] or "Bars") .. "|r")
+		ColorRow(c1, "customColor", L["Custom Color"], -32)
+		ColorRow(c1, "bgColor", L["Bg Color"], -58)
+		ColorRow(c1, "incColor", L["Inc Heal Color"], -84)
+		ColorRow(c1, "absColor", L["Absorb Color"], -110)
+		ColorRow(c1, "aggroColor", L["Aggro Color"], -136)
+		ColorRow(c1, "hotColor", L["Hot Color"], -162)
+		ColorRow(c1, "castColor", L["Cast Color"], -188)
+		local h2 = HG:FontString(c2, 10, "OUTLINE")
+		h2:SetPoint("TOPLEFT", 16, -14)
+		h2:SetText("|cff" .. HG.accentHex .. (L["Debuff Border"] or "Debuff Border") .. "|r")
+		local dc = HG.db.debuffColors or {}
+		ColorRow(c2, "Magic", L["Magic"], -32, dc)
+		ColorRow(c2, "Curse", L["Curse"], -58, dc)
+		ColorRow(c2, "Poison", L["Poison"], -84, dc)
+		ColorRow(c2, "Disease", L["Disease"], -110, dc)
+		ColorRow(c2, "Other", L["Other"], -136, dc)
+	end
+
+	-- 8: profiles ----------------------------------------------------------------------------
+	do
+		local p = f.pages[8]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		local nt = HG:FontString(c1, 10)
+		nt:SetPoint("TOPLEFT", 16, -14)
+		nt:SetText(L["Profile name"])
+		local neb = CreateFrame("EditBox", nil, c1)
+		neb:SetPoint("TOPLEFT", 16, -32)
+		neb:SetSize(170, 20)
+		neb:SetAutoFocus(false)
+		neb:SetFontObject("GameFontHighlightSmall")
+		HG:SkinEditBox(neb)
+		neb:SetScript("OnEscapePressed", function(e) e:ClearFocus() end)
+		neb:SetScript("OnEnterPressed", function(e) e:ClearFocus() end)
+		PlainBtn(c1, 80, L["Save"], 16, -60):SetScript("OnClick", function()
+			local n = strtrim(neb:GetText())
+			if n == "" then return end
+			RG.db.profiles[n] = HG:SerializeDB()
+			RG:RefreshConfig()
+		end)
+		PlainBtn(c1, 80, L["Load"], 102, -60):SetScript("OnClick", function()
+			local n = strtrim(neb:GetText())
+			local t = n ~= "" and HG:DeserializeDB(RG.db.profiles and RG.db.profiles[n])
+			if t then HG:ApplySettings(t) RG:RebuildConfig() end
+		end)
+		PlainBtn(c1, 80, L["Delete"], 188, -60):SetScript("OnClick", function()
+			local n = strtrim(neb:GetText())
+			if n ~= "" then RG.db.profiles[n] = nil RG:RefreshConfig() end
+		end)
+		local lh = HG:FontString(c1, 10, "OUTLINE")
+		lh:SetPoint("TOPLEFT", 16, -92)
+		lh:SetText("|cff" .. HG.accentHex .. (L["Saved profiles"] or "Saved profiles") .. "|r")
+		f.profileRows = CreateFrame("Frame", nil, c1)
+		f.profileRows:SetPoint("TOPLEFT", 8, -110)
+		f.profileRows:SetSize(280, 200)
+		-- export/import
+		local exB = PlainBtn(c2, 90, L["Export"], 16, -48)
+		local eeb = CreateFrame("EditBox", nil, c2)
+		eeb:SetPoint("TOPLEFT", 16, -74)
+		eeb:SetSize(270, 20)
+		eeb:SetAutoFocus(false)
+		eeb:SetFontObject("GameFontHighlightSmall")
+		HG:SkinEditBox(eeb)
+		eeb:SetScript("OnEditFocusGained", function(e) e:HighlightText() end)
+		eeb:SetScript("OnEscapePressed", function(e) e:ClearFocus() end)
+		exB:SetScript("OnClick", function() eeb:SetText(HG:SerializeDB()) eeb:SetFocus() end)
+		local ieb = CreateFrame("EditBox", nil, c2)
+		ieb:SetPoint("TOPLEFT", 16, -106)
+		ieb:SetSize(270, 20)
+		ieb:SetAutoFocus(false)
+		ieb:SetFontObject("GameFontHighlightSmall")
+		HG:SkinEditBox(ieb)
+		ieb:SetScript("OnEscapePressed", function(e) e:ClearFocus() end)
+		ieb:SetScript("OnEnterPressed", function(e) e:ClearFocus() end)
+		PlainBtn(c2, 90, L["Import"], 16, -134):SetScript("OnClick", function()
+			local t = HG:DeserializeDB(ieb:GetText())
+			if t then
+				HG:ApplySettings(t)
+				RG:RebuildConfig()
+			else
+				HG:Print(L["Invalid import string"] or "Invalid import string")
+			end
+		end)
+	end
+
+	-- 9: about ------------------------------------------------------------------------------
+	do
+		local p = f.pages[9]
+		local c1, c2 = Col(p, 1), Col(p, 2)
+		local ver = S.version or "?"
+		local logo = c1:CreateTexture(nil, "ARTWORK")
+		logo:SetTexture(S.media.logo)
+		logo:SetPoint("TOPLEFT", 16, -8)
+		logo:SetSize(80, 80)
+		local h = HG:FontString(c1, 14, "OUTLINE")
+		h:SetPoint("TOPLEFT", logo, "TOPRIGHT", 12, -14)
+		h:SetText("|cff" .. HG.accentHex .. "Heal|rGrid  |cff888888v" .. ver .. "|r")
+		local a = HG:FontString(c1, 10)
+		a:SetPoint("TOPLEFT", h, "BOTTOMLEFT", 0, -4)
+		a:SetText("|cff888888" .. (L["by"] or "by") .. "|r xRL-Dev")
+		LinkRow(c1, L["Homepage"], "https://xrl-dev.de", -104)
+		LinkRow(c1, L["Bugtracker"], "https://xrl-dev.de/bugtracker", -130)
+		LinkRow(c1, L["Impressum"], "https://xrl-dev.de/page/impressum", -156)
+		LinkRow(c1, L["Repository"], "https://github.com/rldevde/SentinelUI-Addon", -182)
+		local h2 = HG:FontString(c2, 10, "OUTLINE")
+		h2:SetPoint("TOPLEFT", 16, -14)
+		h2:SetText("|cff" .. HG.accentHex .. (L["Slash Commands"] or "Slash Commands") .. "|r")
+		local s = HG:FontString(c2, 10)
+		s:SetPoint("TOPLEFT", 16, -34)
+		s:SetText("|cffaaaaaa/suirg, /suihg|r — " .. (L["toggle the grid"] or "toggle the grid") .. "\n" ..
+			"|cffaaaaaa/suirg options|r — " .. (L["open this window"] or "open this window") .. "\n" ..
+			"|cffaaaaaa/suirg scan|r — " .. (L["dump visible frames (debug)"] or "dump visible frames (debug)"))
+		s:SetSpacing(4)
+		local note = HG:FontString(c2, 10)
+		note:SetPoint("TOPLEFT", 16, -110)
+		note:SetWidth(270)
+		note:SetJustifyH("LEFT")
+		note:SetText("|cff888888" .. (L["Bugs and feedback go to the bugtracker or GitHub issues. Click a link field and press Ctrl+C to copy."] or "") .. "|r")
+	end
+
+	-- 7: click-cast bindings ---------------------------------------------------------------
+	local bot = f.pages[7]
+	local bh = HG:FontString(bot, 10, "OUTLINE")
 	bh:SetPoint("TOPLEFT", 0, 0)
-	bh:SetText("|cff" .. S.accentHex .. L["Click Cast"] .. "|r  |cff888888" .. (L["mod · button · action · spell (click to cycle, 'heal'/'dispel' = class spells)"] or "") .. "|r")
-	f.bindRows = CreateFrame("Frame", nil, bot)
-	f.bindRows:SetPoint("TOPLEFT", 0, -18)
-	f.bindRows:SetSize(540, 240)
+	bh:SetText("|cff888888" .. (L["mod · button · action · spell (click to cycle, 'heal'/'dispel' = class spells)"] or "") .. "|r")
+	f.bindScroll = CreateFrame("ScrollFrame", "SentinelUIRaidGridBindScroll", bot, "UIPanelScrollFrameTemplate")
+	f.bindScroll:SetPoint("TOPLEFT", 0, -18)
+	f.bindScroll:SetPoint("BOTTOMRIGHT", -30, 26)
+	f.bindRows = CreateFrame("Frame", nil, f.bindScroll)
+	f.bindRows:SetSize(560, 1)
+	f.bindScroll:SetScrollChild(f.bindRows)
+	f.bindScroll:SetScript("OnMouseWheel", function(s, delta)
+		local sb = s.ScrollBar or _G[s:GetName() .. "ScrollBar"]
+		if sb then sb:SetValue(sb:GetValue() - delta * 26) end
+	end)
 	local add = CreateFrame("Button", nil, bot)
 	add:SetSize(110, 20)
 	add:SetPoint("BOTTOMLEFT", 0, 0)
-	S:SkinButton(add)
-	local addTxt = S:FontString(add, 10, "OUTLINE")
+	HG:SkinButton(add)
+	local addTxt = HG:FontString(add, 10, "OUTLINE")
 	addTxt:SetPoint("CENTER")
 	addTxt:SetText(L["Add Binding"])
 	add:SetScript("OnClick", function()
-		tinsert(S.db.profile.raidgrid.clickCast.bindings, { button = "3", mod = "none", type = "spell", value = "" })
+		tinsert(HG.db.clickCast.bindings, { button = "3", mod = "none", type = "spell", value = "" })
 		RG:RefreshConfig() RG:Update()
 	end)
 	f:Hide()
@@ -1095,14 +1872,30 @@ function RG:RefreshConfig()
 	for _, r in ipairs(f._brows or {}) do r:Hide() end
 	wipe(f._brows or {})
 	f._brows = f._brows or {}
-	local binds = S.db.profile.raidgrid.clickCast.bindings
-	local maxShow = 8
+	local binds = HG.db.clickCast.bindings
 	for i, _ in ipairs(binds) do
-		if i > maxShow then break end
 		local row = BindingRow(f.bindRows, i, -(i - 1) * 26)
 		f._brows[i] = row
 		row:Show()
 	end
+	f.bindRows:SetHeight(max(1, #binds * 26))
+	-- saved profile quick-load buttons
+	for _, b in ipairs(f._prows or {}) do b:Hide() end
+	f._prows = {}
+	if f.profileRows then
+		local names = {}
+		for n in pairs(RG.db.profiles or {}) do names[#names + 1] = n end
+		sort(names)
+		for i, n in ipairs(names) do
+			local b = PlainBtn(f.profileRows, 260, n, 0, -(i - 1) * 24)
+			b:SetScript("OnClick", function()
+				local t = HG:DeserializeDB(RG.db.profiles[n])
+				if t then HG:ApplySettings(t) RG:RebuildConfig() end
+			end)
+			f._prows[i] = b
+		end
+	end
+	self:UpdateStatus()
 end
 
 function RG:ToggleConfig()
@@ -1111,7 +1904,7 @@ function RG:ToggleConfig()
 end
 
 -- diagnostic: dump every visible region >60px wide near the grid so we can
--- identify stray bars in-game via /suirg scan
+-- identify stray bars in-game via /healgrid scan
 local function DumpRegions(obj, depth, tag)
 	if depth > 5 or not obj then return end
 	for i = 1, obj.GetNumRegions and select("#", obj:GetRegions()) or 0 do
@@ -1120,7 +1913,7 @@ local function DumpRegions(obj, depth, tag)
 			local w = r.GetWidth and r:GetWidth() or 0
 			if w and w > 60 then
 				local vr, vg, vb = r.GetVertexColor and r:GetVertexColor()
-				S:Print(format("%s[%s] %s w=%.0f h=%.0f col=%s",
+				HG:Print(format("%s[%s] %s w=%.0f h=%.0f col=%s",
 					strrep("  ", depth), tag, tostring(r:GetObjectType()),
 					w, r.GetHeight and r:GetHeight() or 0,
 					vr and format("%.2f/%.2f/%.2f", vr, vg or 0, vb or 0) or "-"))
@@ -1134,8 +1927,8 @@ end
 
 function RG:ScanRegions()
 	local f = self.frame
-	if not f then S:Print("HealGrid: no frame") return end
-	S:Print("HealGrid regions >60px wide:")
+	if not f then HG:Print("HealGrid: no frame") return end
+	HG:Print("HealGrid regions >60px wide:")
 	DumpRegions(f, 0, "f")
 	for g = 1, MAX_GROUPS do for r = 1, MAX_ROWS do
 		local c = self.cells[g][r]
@@ -1144,58 +1937,47 @@ function RG:ScanRegions()
 end
 
 -- driver ---------------------------------------------------------------------
--- visibility rule: ALWAYS shows always, PARTY only in a group, RAID only in raid
-local function VisibleByRule()
-	local v = RG.db and RG.db.visibilityMode or "ALWAYS"
-	if v == "RAID" then return IsInRaid() end
-	if v == "PARTY" then return IsInGroup() or IsInRaid() end
-	return true
-end
-
-local function ApplyVisibility()
-	local f = RG.frame
-	if not f then return end
-	local show = RG.wantShown and VisibleByRule()
-	if f:IsShown() ~= show then f:SetShown(show) end
-end
-
 local function Tick()
 	if not RG.frame then return end
-	ApplyVisibility()
-	if not RG.frame:IsShown() then return end
+	if not RG.frame:IsShown() then
+		-- hidden by a visibility rule: come back once the rule matches again
+		if RG.wantShown and RG:ShouldShow() then RG.frame:Show() else return end
+	end
 	local ok, err = pcall(RG.Refresh, RG)
 	if not ok and not RG.tickErrLogged then
 		RG.tickErrLogged = true
-		S:LogError(tostring(err), "RaidGrid:Refresh")
+		HG:LogError(tostring(err), "HealGrid:Refresh")
 	end
 end
 
 function RG:Toggle()
+	if InCombatLockdown() and not self.frame then
+		-- protected cells cannot be configured in combat; defer the first show
+		return HG:RunOutOfCombat(self.Toggle, self)
+	end
 	local ok, err = pcall(function()
 		self:BuildFrame()
-		self.wantShown = not self.wantShown
-		ApplyVisibility()
 		if self.frame:IsShown() then
+			self.wantShown = false
+			self.frame:Hide()
+			if ticker then ticker:Cancel() ticker = nil end
+		else
+			self.wantShown = true
+			self.frame:Show()
 			if InCombatLockdown() then
-				S:RunOutOfCombat(self.Layout, self)
-				S:RunOutOfCombat(self.ApplyClicks, self)
+				HG:RunOutOfCombat(self.Layout, self)
+				HG:RunOutOfCombat(self.ApplyClicks, self)
 			else
 				self:Layout()
 				self:ApplyClicks()
 			end
 			self:Refresh()
-		end
-		-- keep the ticker alive while wanted even if the rule hides the frame,
-		-- so the grid pops back automatically on joining a group
-		if self.wantShown then
 			if not ticker then ticker = C_Timer.NewTicker(0.2, Tick) end
-		elseif ticker then
-			ticker:Cancel() ticker = nil
 		end
 	end)
 	if not ok then
-		S:LogError(tostring(err), "RaidGrid:Toggle")
-		S:Print("|cffff5555RaidGrid: error logged — check /sui log|r")
+		HG:LogError(tostring(err), "HealGrid:Toggle")
+		HG:Print("|cffff5555HealGrid: error - /suirg to retry|r")
 	end
 end
 
@@ -1207,31 +1989,87 @@ function RG:READY_CHECK_FINISHED()
 	if self.frame and self.frame:IsShown() then self:Refresh() end
 end
 
+-- the macro pad needs protected attributes; defer in combat like clicks
+function RG:ApplyMacroPad()
+	local p = self.frame and self.frame.pad
+	if not p then return end
+	if InCombatLockdown() then return HG:RunOutOfCombat(self.ApplyMacroPad, self) end
+	p:SetAttribute("type", "macro")
+	p:SetAttribute("macrotext", self.db.macroPadText or "")
+	p:SetShown(self.db.macroPad and (self.db.macroPadText or "") ~= "")
+end
+
+-- per-unit repaint: events carry the unit, so only matching cells get painted
+function RG:OnUnitEvent(_, unit)
+	if not self.cells or type(unit) ~= "string" then return end
+	for g = 1, MAX_GROUPS do
+		for r = 1, MAX_ROWS do
+			local c = self.cells[g][r]
+			if c:IsShown() and c.unit == unit and c.m then
+				pcall(self.Paint, self, c, c.m)
+			end
+		end
+	end
+end
+
+local function PlayerCastTimes()
+	local _, _, _, s, e = UnitCastingInfo("player")
+	if not e and UnitChannelInfo then _, _, _, s, e = UnitChannelInfo("player") end
+	if e then return e / 1000, (e - s) / 1000 end
+end
+
+function RG:UNIT_SPELLCAST_SENT(_, unit, target)
+	if unit ~= "player" then return end
+	self.castTarget = (target and target ~= "") and Ambiguate(target, "short") or UnitName("target") and Ambiguate(UnitName("target"), "short") or nil
+	self.castEndT, self.castDur = PlayerCastTimes()
+end
+
+local function ClearCast(unit)
+	if unit == "player" then RG.castTarget = nil end
+end
+function RG:UNIT_SPELLCAST_STOP(_, unit) ClearCast(unit) end
+function RG:UNIT_SPELLCAST_FAILED(_, unit) ClearCast(unit) end
+function RG:UNIT_SPELLCAST_INTERRUPTED(_, unit) ClearCast(unit) end
+function RG:UNIT_SPELLCAST_CHANNEL_STOP(_, unit) ClearCast(unit) end
+
 function RG:Update()
+	-- test mode forces the grid visible so it can be previewed solo
+	if (self.db.testSize or 0) > 0 and (not self.frame or not self.frame:IsShown()) then
+		if InCombatLockdown() then return HG:RunOutOfCombat(self.Update, self) end
+		self:BuildFrame()
+		self.wantShown = true
+		self.frame:Show()
+		self:Layout()
+		self:ApplyClicks()
+		self:Refresh()
+		if not ticker then ticker = C_Timer.NewTicker(0.2, Tick) end
+		return
+	end
 	if self.frame and self.frame:IsShown() then
 		if InCombatLockdown() then
 			-- Layout moves/sizes protected cells — defer everything to combat end
-			S:RunOutOfCombat(self.Layout, self)
-			S:RunOutOfCombat(self.ApplyClicks, self)
+			HG:RunOutOfCombat(self.Layout, self)
+			HG:RunOutOfCombat(self.ApplyClicks, self)
 		else
 			self:Layout()
 			self:ApplyClicks()
 		end
+		self:ApplyMacroPad()
 		self:Refresh()
 	end
 end
 
 function RG:Initialize()
 	self.db = S.db.profile.raidgrid
-	self.wantShown = false
-	-- migrate any previous default binding set (dispel or plain menu on right
-	-- click) to heal-on-right-click; only touches uncustomized profiles
-	local b = self.db.clickCast and self.db.clickCast.bindings
-	if b and #b == 2 and b[1].button == "1" and b[1].type == "target" and b[2].button == "2"
-		and ((b[2].type == "spell" and b[2].value == "dispel") or b[2].type == "togglemenu")
-	then
-		b[2] = { button = "2", mod = "none", type = "spell", value = "heal" }
+	self.db.profiles = self.db.profiles or {}
+	-- the old built-in grid shipped just two bindings (target / heal); an
+	-- untouched pair is replaced by the full button x modifier matrix
+	local cb = self.db.clickCast and self.db.clickCast.bindings
+	if cb and #cb == 2 and cb[1].button == "1" and cb[1].type == "target"
+		and cb[2].button == "2" and cb[2].type == "spell" and cb[2].value == "heal" then
+		self.db.clickCast.bindings = {}
 	end
+	SeedClickCast(self.db)
 	if self.db.enable == false then return end
 
 	self.private = self.private or {}
@@ -1251,8 +2089,29 @@ function RG:Initialize()
 	self:RegisterEvent("READY_CHECK_FINISHED")
 	-- the class rez resolves from the spellbook: rebind once it has loaded
 	self:RegisterEvent("SPELLS_CHANGED", function()
-		if InCombatLockdown() then S:RunOutOfCombat(RG.ApplyClicks, RG) else RG:ApplyClicks() end
+		if InCombatLockdown() then HG:RunOutOfCombat(RG.ApplyClicks, RG) else RG:ApplyClicks() end
 	end)
+	-- event-driven per-cell repaint instead of relying on the ticker alone
+	for _, ev in ipairs({
+		"UNIT_HEALTH_FREQUENT", "UNIT_MAXHEALTH", "UNIT_POWER_FREQUENT",
+		"UNIT_AURA", "UNIT_FLAGS", "UNIT_CONNECTION", "UNIT_THREAT_SITUATION_UPDATE",
+		"INCOMING_RESURRECT_CHANGED", "UNIT_HEAL_PREDICTION", "UNIT_ABSORB_AMOUNT_CHANGED",
+	}) do
+		self:RegisterEvent(ev, "OnUnitEvent")
+	end
+	-- track the player's spellcast target for the castbar + highlight
+	self:RegisterEvent("UNIT_SPELLCAST_SENT")
+	self:RegisterEvent("UNIT_SPELLCAST_STOP")
+	self:RegisterEvent("UNIT_SPELLCAST_FAILED")
+	self:RegisterEvent("UNIT_SPELLCAST_INTERRUPTED")
+	self:RegisterEvent("UNIT_SPELLCAST_CHANNEL_STOP")
+
+	-- healer classes get the grid automatically at login; everyone else
+	-- toggles it manually via /healgrid or the minimap button
+	if CLASS_SPELLS[HG.myClass] then
+		self:Toggle()
+	end
+
 	SlashCmdList.SENTINELUIRAIDGRID = function(arg)
 		arg = strtrim(arg or ""):lower()
 		if arg == "options" or arg == "config" or arg == "opt" then
@@ -1266,4 +2125,10 @@ function RG:Initialize()
 	SLASH_SENTINELUIRAIDGRID1 = "/suirg"
 	SLASH_SENTINELUIRAIDGRID2 = "/suiheal"
 	SLASH_SENTINELUIRAIDGRID3 = "/suihg"
+	-- the standalone addon owns /healgrid and /hg when it is loaded too
+	local isLoaded = C_AddOns and C_AddOns.IsAddOnLoaded or IsAddOnLoaded
+	if not (isLoaded and isLoaded("HealGrid")) then
+		SLASH_SENTINELUIRAIDGRID4 = "/healgrid"
+		SLASH_SENTINELUIRAIDGRID5 = "/hg"
+	end
 end

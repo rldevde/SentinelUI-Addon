@@ -48,6 +48,11 @@ local selects = {
 	locationText = { SHOW = L["Always"], MOUSEOVER = L["Mouseover"], HIDE = L["Hide"] },
 	collectorExpand = { HOVER = L["Mouseover"], CLICK = L["Click"], ALWAYS = L["Always"] },
 	visibilityMode = { ALWAYS = L["Always"], PARTY = L["In group or raid"], RAID = L["Raid only"] },
+	visMode = { ALWAYS = L["Always"], GROUP = L["In group or raid"], RAID = L["Raid only"] },
+	lifeMode = { PERCENT = L["Percent"], DEFICIT = L["Deficit"], BOTH = L["Both"], NONE = L["None"] },
+	aggroStyle = { DOT = L["Dot"], BORDER = L["Border"], BOTH = L["Both"], NONE = L["None"] },
+	barStyle = { FLAT = L["Flat"], DEFAULT = L["Default"] },
+	dispelAlert = { NONE = L["None"], SOUND = L["Sound"], FLASH = L["Flash"], BOTH = L["Both"] },
 	collectorGrowH = { LEFT = L["Left"], RIGHT = L["Right"] },
 	collectorGrowV = { UP = L["Up"], DOWN = L["Down"] },
 	shape = { ROUND = L["Round (radar)"], SQUARE = L["Square"] },
@@ -58,7 +63,7 @@ local selects = {
 		if path[1] == "unitframes" then return { SENTINEL = L["Sentinel (edge + power rail)"], EDGE = L["Edge accent only"], CLASSIC = L["Classic (stacked bars)"] } end
 	end,
 	healthMode = function(path)
-		if path[1] == "raidgrid" then return { CLASS = L["Class colored bar"], GRADIENT = L["Health gradient (green to red)"] } end
+		if path[1] == "raidgrid" then return { CLASS = L["Class colored bar"], GRADIENT = L["Health gradient (green to red)"], CUSTOM = L["Custom color"] } end
 		return { DARK = L["Dark (class color on edge + name)"], CLASS = L["Class colored bar"] }
 	end,
 
@@ -72,7 +77,8 @@ local selects = {
 	friendlyStyle = function(path) if path[1] == "nameplates" then return NP_FSTYLES end end,
 	moneyFormat = { SMART = L["Smart"], FULL = L["Full"], SHORT = L["Gold only"] }, goldFormat = { SMART = L["Smart"], FULL = L["Full"], SHORT = L["Gold only"] },
 	sortMethod = function(path)
-		if path[1] == "unitframes" or path[1] == "raidgrid" then return { INDEX = L["Index"], NAME = L["Name"] } end
+		if path[1] == "raidgrid" then return { INDEX = L["Index"], NAME = L["Name"], ROLE = L["Role"] } end
+		if path[1] == "unitframes" then return { INDEX = L["Index"], NAME = L["Name"] } end
 		return { TIME = L["Time"], INDEX = L["Index"], NAME = L["Name"] }
 	end,
 	sortDir = function(path)
@@ -130,7 +136,7 @@ local ranges = {
 	historySize = { 0, 500, 10 }, throttle = { 0, 120, 1 }, unitSize = { 10, 50, 1 }, inactiveDays = { 7, 365, 1 },
 }
 
-local skipKeys = { movers = true, customPanels = true, panels = true, paging = true, point = true, filters = true, customTexts = true, clickCast = true, bindings = true, buttonIgnore = true, mapPos = true }
+local skipKeys = { profiles = true, movers = true, customPanels = true, panels = true, paging = true, point = true, filters = true, customTexts = true, clickCast = true, bindings = true, buttonIgnore = true, mapPos = true }
 
 selects.customFilter = function()
 	local v = { NONE = L["None"] }
@@ -382,8 +388,9 @@ end
 local function PrivateToggle(module, key, label, order)
 	return {
 		type = "toggle", name = label, order = order, width = "full",
-		get = function() return S.private[module][key] end,
+		get = function() local t = S.private[module] if t == nil then return true end return t[key] end,
 		set = function(_, v)
+			S.private[module] = S.private[module] or {}
 			S.private[module][key] = v
 			if module == "nameplates" and key == "enable" then S.private.nameplates.userSet = true end
 			S:StaticReload()

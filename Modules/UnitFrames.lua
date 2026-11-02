@@ -2159,6 +2159,14 @@ function UF:Initialize()
 		-- party buttons show/hide themselves via unit watch (also in combat);
 		-- only the sort order is remapped, which waits for regen
 		UF:AssignPartyUnits()
+		-- a joiner reports health/connection as 0 until the client fetches
+		-- them; repaint everything now and once more shortly after
+		for _, f in ipairs(UF.frames) do if f.unit then UF:UpdateFrame(f) end end
+		C_Timer.After(1, function()
+			for _, f in ipairs(UF.frames) do
+				if f.unit and UnitExists(f.unit) then UF:UpdateFrame(f) end
+			end
+		end)
 	end)
 	self:RegisterEvent("UNIT_PET", function(_, _, unit)
 		if unit == "player" then RefreshSecureHeaders() end

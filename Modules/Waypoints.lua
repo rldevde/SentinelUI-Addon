@@ -9,6 +9,7 @@
 	while our arrow/commands still work on their own.
 ]]
 
+local S = SentinelUI
 local TT = S:NewModule("Waypoints", "waypoints")
 local L = S.L
 local DT
@@ -45,24 +46,52 @@ local function WorldPos(m, x, y)
 	if not (GetWorldPos and x and y and m) then return end
 	local w = CreateVector2D and CreateVector2D(x, y)
 	if not w then return end
-	local ok, wp = pcall(GetWorldPos, m, w)
+	-- returns (instanceID, Vector2D); older clients may return the vector alone
+	local ok, a, b = pcall(GetWorldPos, m, w)
+	local wp = type(b) == "table" and b or (type(a) == "table" and a) or nil
 	if ok and wp then return wp.x, wp.y end
 end
 
+-- unit vectors of the map's east (x) and south (y) axes in world space; the
+-- world-axis convention is calibrated per map instead of assumed
+local basisCache = {}
+local function Basis(m)
+	local c = basisCache[m]
+	if c then return c[1], c[2], c[3], c[4] end
+	local ox, oy = WorldPos(m, 0, 0)
+	local ex, ey = WorldPos(m, 1, 0)
+	local sx, sy = WorldPos(m, 0, 1)
+	if not (ox and ex and sx) then return end
+	local function unit(x, y)
+		local l = math.sqrt(x * x + y * y)
+		if l == 0 then return 0, 0 end
+		return x / l, y / l
+	end
+	local e1, e2 = unit(ex - ox, ey - oy)
+	local s1, s2 = unit(sx - ox, sy - oy)
+	basisCache[m] = { e1, e2, s1, s2 }
+	return e1, e2, s1, s2
+end
+
+-- distance in yards and heading (radians, counter-clockwise from north,
+-- same convention as GetPlayerFacing)
 local function DistDir(uid)
 	local pm, px, py = PlayerPos()
 	if not px then return end
 	local wx, wy = WorldPos(uid[1], uid[2], uid[3])
 	local pwX, pwY = WorldPos(pm, px, py)
+	local east, south
 	if wx and pwX then
 		local dx, dy = wx - pwX, wy - pwY
-		return math.sqrt(dx * dx + dy * dy), math.atan2(dy, dx)
+		local e1, e2, s1, s2 = Basis(pm)
+		if not e1 then return math.sqrt(dx * dx + dy * dy), 0 end
+		east, south = dx * e1 + dy * e2, dx * s1 + dy * s2
+	elseif uid[1] == pm then
+		east, south = (uid[2] - px) * 1000, (uid[3] - py) * 1000
+	else
+		return
 	end
-	-- same-map fallback when the client lacks world positions
-	if uid[1] == pm then
-		local dx, dy = (uid[2] - px) * 1000, (uid[3] - py) * 1000
-		return math.sqrt(dx * dx + dy * dy), math.atan2(dy, dx)
-	end
+	return math.sqrt(east * east + south * south), math.atan2(-east, -south)
 end
 
 local function FireCB(uid, what, arg)
@@ -94,7 +123,7 @@ end
 
 local function BuildArrow()
 	if arrow then return end
-	arrow = CreateFrame("Frame", "SentinelWaypointArrow", UIParent, S.BackdropTemplate and "BackdropTemplateMixin" or nil)
+	arrow = CreateFrame("Frame", "SentinelWaypointArrow", UIParent)
 	arrow:SetSize(72, 92)
 	arrow:SetPoint("CENTER", UIParent, "CENTER", 0, 220)
 	arrow:SetClampedToScreen(true)
@@ -103,7 +132,6 @@ local function BuildArrow()
 	arrow:RegisterForDrag("LeftButton")
 	arrow:SetScript("OnDragStart", arrow.StartMoving)
 	arrow:SetScript("OnDragStop", arrow.StopMovingOrSizing)
-	S:CreateBackdrop(arrow, "Transparent")
 
 	arrTex = arrow:CreateTexture(nil, "ARTWORK")
 	arrTex:SetSize(56, 56)
@@ -131,8 +159,8 @@ local function BuildArrow()
 		if not dist then arrDist:SetText(""); return end
 		local facing = GetPlayerFacing and GetPlayerFacing() or 0
 		if dir then
-			local a = dir - facing
-			if arrTex.SetRotation then arrTex:SetRotation(-a + math.pi / 2) end
+			local a = (dir - facing + math.pi) % TWO_PI - math.pi
+			if arrTex.SetRotation then arrTex:SetRotation(a) end
 			local perc = math.abs((math.pi - math.abs(a)) / math.pi)
 			if perc > 0.85 then arrTex:SetVertexColor(0.3, 1, 0.3)
 			elseif perc > 0.4 then arrTex:SetVertexColor(1, 0.85, 0.2)
@@ -192,16 +220,16 @@ local function GetPin(i)
 end
 
 local function UpdateMinimapPins()
-	local pm = PlayerPos()
+	local pm, pmx, pmy = PlayerPos()
+	local pwx, pwy = WorldPos(pm, pmx, pmy)
 	local i = 1
 	for m, set in pairs(waypoints) do
 		for _, uid in pairs(set) do
 			if uid.minimap ~= false and m == pm then
 				local wx, wy = WorldPos(m, uid[2], uid[3])
-				local px, py = WorldPos(m, (select(2, PlayerPos())))
-				if wx and px then
+				if wx and pwx then
 					local pin = GetPin(i)
-					local dx, dy = wx - px, wy - py
+					local dx, dy = wx - pwx, wy - pwy
 					local d = math.sqrt(dx * dx + dy * dy)
 					local r = math.min(d * 0.4, (Minimap:GetWidth() / 2) - 10)
 					local a = math.atan2(dy, dx)
@@ -408,6 +436,18 @@ local function InstallFacade()
 	end
 	api.db = { profile = { arrow = { setclosest = true } } }
 	_G.TomTom = api
+	-- Questie gates parts of its UI on IsAddOnLoaded("TomTom"); report the
+	-- facade as loaded so those controls appear
+	local function wrap(tbl, fn)
+		local orig = tbl and tbl[fn]
+		if type(orig) ~= "function" then return end
+		tbl[fn] = function(name, ...)
+			if name == "TomTom" then return true, true end
+			return orig(name, ...)
+		end
+	end
+	wrap(_G, "IsAddOnLoaded")
+	wrap(C_AddOns, "IsAddOnLoaded")
 end
 
 -- ------------------------------------------------------------------------
@@ -415,15 +455,15 @@ end
 -- ------------------------------------------------------------------------
 local f = CreateFrame("Frame")
 function TT:Initialize()
-	if not self.db.enable then return end
 	BuildArrow()
 	f:RegisterEvent("PLAYER_DEAD")
 	f:RegisterEvent("PLAYER_ALIVE")
 	f:RegisterEvent("PLAYER_UNGHOST")
 	f:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+	local tick = 0
 	f:SetScript("OnUpdate", function(_, e)
-		CorpseCheck.t = (CorpseCheck.t or 0) + e
-		if CorpseCheck.t > 1 then CorpseCheck.t = 0 CorpseCheck() UpdateMinimapPins() end
+		tick = tick + e
+		if tick > 1 then tick = 0 CorpseCheck() UpdateMinimapPins() end
 	end)
 	InstallFacade()
 	SLASH_SUIWAY1 = "/way"

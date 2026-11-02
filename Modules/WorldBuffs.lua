@@ -97,8 +97,9 @@ function WB:LayerNum(zoneID)
 	local IT = self:IT()
 	if IT and IT.LayerNum then return IT:LayerNum(zoneID) end
 	local keys = {}
-	for k in pairs(self:Layers()) do keys[#keys + 1] = k end
+	for k in pairs(self:Layers()) do keys[#keys + 1] = tostring(k) end
 	sort(keys)
+	zoneID = tostring(zoneID)
 	for i, k in ipairs(keys) do if k == zoneID then return i end end
 	return 0
 end
@@ -565,7 +566,7 @@ function WB:AppendTooltip()
 	local layers = self:Layers()
 	local keys = {}
 	for k in pairs(layers) do keys[#keys + 1] = k end
-	sort(keys)
+	table.sort(keys, function(a, b) return tostring(a) < tostring(b) end)
 	if #keys == 0 then return end
 	GameTooltip:AddLine(" ")
 	GameTooltip:AddLine(L["World Buffs"], 1, 0.8, 0.3)

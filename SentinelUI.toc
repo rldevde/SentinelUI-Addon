@@ -23,6 +23,7 @@ Locales\enUS.lua
 Locales\deDE.lua
 Locales\deDE_GuildHub.lua
 Locales\deDE_TalentAtlas.lua
+Locales\deDE_HealGrid.lua
 Core\Defaults.lua
 Core\Media.lua
 Core\Toolkit.lua

@@ -655,12 +655,19 @@ local mailSeen
 
 local function ReadInbox()
 	local n = GetInboxNumItems and GetInboxNumItems() or 0
-	local unread = 0
+	local unread, senders = 0, {}
 	for i = 1, n do
-		local wasRead = select(9, GetInboxHeaderInfo(i))
-		if wasRead == false then unread = unread + 1 end
+		local _, _, sender, _, _, _, _, _, wasRead = GetInboxHeaderInfo(i)
+		if wasRead == false then
+			unread = unread + 1
+			if sender and sender ~= "" then
+				local dupe = false
+				for _, s2 in ipairs(senders) do if s2 == sender then dupe = true break end end
+				if not dupe then senders[#senders + 1] = sender end
+			end
+		end
 	end
-	return unread, n
+	return unread, n, senders
 end
 
 local mailWatch = CreateFrame("Frame")
@@ -672,32 +679,48 @@ mailWatch:SetScript("OnEvent", function(_, ev)
 	if ev == "UPDATE_PENDING_MAIL" then
 		mailSeen = nil -- server says state changed: forget memory
 	else
-		local unread, n = ReadInbox()
-		mailSeen = { unread = unread, n = n }
+		local unread, n, senders = ReadInbox()
+		mailSeen = { unread = unread, n = n, senders = senders }
 	end
 	if DT and DT.Update then DT:Update("Mail") end
 end)
 
 local function UnreadMail()
-	local unread, n = ReadInbox()
-	if n == 0 and mailSeen then return mailSeen.unread, mailSeen.n end
-	if n == 0 then
-		-- never opened this session: pending-flag signals only
-		if HasNewMail and HasNewMail() then return 1, 1 end
-		if GetLatestThreeSenders and (GetLatestThreeSenders()) then return 1, 1 end
-		local mailIcon = MiniMapMailIcon or (MiniMapMailFrame and MiniMapMailFrame.MailIcon)
-		if mailIcon and mailIcon.IsShown and mailIcon:IsShown() then return 1, 1 end
+	local unread, n, senders = ReadInbox()
+	if n == 0 and mailSeen then
+		return mailSeen.unread, mailSeen.n, true, mailSeen.senders
 	end
-	return unread, n
+	if n == 0 then
+		-- never opened this session: the pending flag says "mail exists"
+		-- but is unverified -- names come from GetLatestThreeSenders, the
+		-- same source the stock minimap mail icon tooltip uses
+		if HasNewMail and HasNewMail() then
+			local snd = {}
+			if GetLatestThreeSenders then
+				for _, sn in ipairs({ GetLatestThreeSenders() }) do
+					if sn then snd[#snd + 1] = sn end
+				end
+			end
+			return 1, 1, false, snd
+		end
+	end
+	return unread, n, true, senders
 end
 
 DT:Register("Mail", {
 	interval = 10,
 	events = { "UPDATE_PENDING_MAIL", "MAIL_INBOX_UPDATE", "PLAYER_ENTERING_WORLD", "MAIL_CLOSED" },
 	update = function(slot)
-		local unread, n = UnreadMail()
-		if unread > 0 then
-			slot.text:SetText(("|cff40ff40%s (%d)|r"):format(L["New Mail"], unread))
+		local unread, n, verified, senders = UnreadMail()
+		local who = ""
+		if senders and senders[1] then
+			who = ": " .. table.concat(senders, ", ", 1, math.min(#senders, 2))
+			if #senders > 2 then who = who .. "+" .. (#senders - 2) end
+		end
+		if unread > 0 and verified then
+			slot.text:SetText(("|cff40ff40%s (%d)|r|cff9acd32%s|r"):format(L["New Mail"], unread, who))
+		elseif unread > 0 then
+			slot.text:SetText(("|cff40ff40%s|r|cff9acd32%s|r"):format(L["New Mail"], who))
 		elseif n > 0 then
 			slot.text:SetText(("|cffffff00%s (%d)|r"):format(L["Mail"], n))
 		else
@@ -709,11 +732,25 @@ DT:Register("Mail", {
 		if n == 0 then return end
 		local tt = DT:Tooltip(slot)
 		tt:AddLine(HAVE_MAIL_FROM or L["New Mail"], S.accent.r, S.accent.g, S.accent.b)
-		local n2 = math.min(n, 5)
-		for i = 1, n2 do
+		local shown = 0
+		for i = 1, math.min(n, 5) do
 			local _, _, sender, subject, _, _, _, _, wasRead = GetInboxHeaderInfo(i)
-			local pre = wasRead == false and "|cff40ff40" or "|cffaaaaaa"
-			tt:AddDoubleLine(pre .. tostring(subject or "?") .. "|r", "|cff888888" .. tostring(sender or "?") .. "|r")
+			if sender or subject then
+				local pre = wasRead == false and "|cff40ff40" or "|cffaaaaaa"
+				tt:AddDoubleLine(pre .. tostring(subject or "?") .. "|r", "|cff888888" .. tostring(sender or "?") .. "|r")
+				shown = shown + 1
+			end
+		end
+		if shown == 0 then
+			-- mailbox closed: only the pending sender names are available,
+			-- same data the stock mail icon tooltip shows
+			local senders = { GetLatestThreeSenders and GetLatestThreeSenders() }
+			for _, sn in ipairs(senders) do
+				if sn then tt:AddLine(sn, 1, 1, 1) shown = shown + 1 end
+			end
+			if shown == 0 then
+				tt:AddLine(format("%s: %d", L["Mail"] or "Mail", n), 0.7, 0.7, 0.7)
+			end
 		end
 		tt:Show()
 	end,

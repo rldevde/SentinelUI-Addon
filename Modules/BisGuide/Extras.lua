@@ -346,11 +346,11 @@ local function RefreshTalents()
 					if r and r > 0 then
 						btn.tex:SetDesaturated(false)
 						btn.pts:SetText(r)
-						btn.edge:SetColorTexture(1, 0.84, 0, 0.9)
+						for _, t in ipairs(btn.edges) do t:SetVertexColor(1, 0.84, 0, 0.9) end
 					else
 						btn.tex:SetDesaturated(true)
 						btn.pts:SetText("")
-						btn.edge:SetColorTexture(0, 0, 0, 0)
+						for _, t in ipairs(btn.edges) do t:SetVertexColor(0, 0, 0, 0) end
 					end
 					btn:Show()
 				else
@@ -363,7 +363,7 @@ end
 
 local function GetTalentsFrame()
 	if TF then return TF end
-	TF = BaseWindow("SentinelUIBisTalents", L["BiS Talents"] or "BiS Talents", 560, 400)
+	TF = BaseWindow("SentinelUIBisTalents", L["BiS Talents"] or "BiS Talents", 560, 480)
 	TF.classDD = SpecDD(TF, "SentinelUIBisTalClassDD", L["Class"] or "Class", -6)
 	TF.specDD = SpecDD(TF, "SentinelUIBisTalSpecDD", L["Spec"] or "Spec", 160)
 	TF.buildDD = SpecDD(TF, "SentinelUIBisTalBuildDD", L["Build"] or "Build", 326)
@@ -387,7 +387,7 @@ local function GetTalentsFrame()
 	TF.trees = {}
 	for ti = 1, 3 do
 		local tf = CreateFrame("Frame", nil, TF)
-		tf:SetSize(4 * TAL_OFFX + 10, 7 * TAL_OFFY + 30)
+		tf:SetSize(4 * TAL_OFFX + 10, 9 * TAL_OFFY + 30)
 		tf:SetPoint("TOPLEFT", 16 + (ti - 1) * 180, -64)
 		local function bgTex(point)
 			local t = tf:CreateTexture(nil, "BACKGROUND")
@@ -411,11 +411,24 @@ local function GetTalentsFrame()
 			b.tex = b:CreateTexture(nil, "ARTWORK")
 			b.tex:SetAllPoints()
 			b.tex:SetTexCoord(0.06, 0.94, 0.06, 0.94)
-			b.edge = b:CreateTexture(nil, "OVERLAY")
-			b.edge:SetPoint("TOPLEFT", -2, 2)
-			b.edge:SetPoint("BOTTOMRIGHT", 2, -2)
-			b.edge:SetDrawLayer("OVERLAY", 7)
-			b.edge:SetColorTexture(0, 0, 0, 0)
+			-- learned ring: 4 thin edge lines instead of a full fill, which
+			-- flooded the icon gold on this client
+			b.edges = {}
+			for _, pt in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+				local t = b:CreateTexture(nil, "OVERLAY", nil, 7)
+				t:SetTexture([[Interface\Buttons\WHITE8X8]])
+				if pt == "TOP" then
+					t:SetPoint("TOPLEFT", -2, 2) t:SetPoint("TOPRIGHT", 2, 2) t:SetHeight(2)
+				elseif pt == "BOTTOM" then
+					t:SetPoint("BOTTOMLEFT", -2, -2) t:SetPoint("BOTTOMRIGHT", 2, -2) t:SetHeight(2)
+				elseif pt == "LEFT" then
+					t:SetPoint("TOPLEFT", -2, 2) t:SetPoint("BOTTOMLEFT", -2, -2) t:SetWidth(2)
+				else
+					t:SetPoint("TOPRIGHT", 2, 2) t:SetPoint("BOTTOMRIGHT", 2, -2) t:SetWidth(2)
+				end
+				t:SetVertexColor(0, 0, 0, 0)
+				b.edges[#b.edges + 1] = t
+			end
 			b.pts = S:FontString(b, 10, "OUTLINE")
 			b.pts:SetPoint("BOTTOMRIGHT", 2, -2)
 			b.pts:SetTextColor(1, 1, 1)
