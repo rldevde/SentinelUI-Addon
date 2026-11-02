@@ -7,21 +7,11 @@ Note on versions: `## Version` is SentinelUI's own release number. The embedded
 BetterItem module reports `## X-BetterItem-Version` and must always equal the
 standalone RLBetterItem release.
 
-## [1.5.1] - 2026-11-01
-
-### Added
-- **Waypoints module** (`/way`, `/cway`, `/waylist`, `/wayresetall`): TomTom-style waypoint queue with crazy arrow (rotating pointer, distance, ETA), minimap pins, corpse arrow, ctrl-rightclick on the world map to drop a waypoint, and a TomTom-compatible API facade so Questie/other addons can feed waypoints when the real TomTom is not loaded
-- **Tracker history database** (`SentinelUITrackerDB`): kills/loot/auction datatexts now show session, last-session and lifetime totals; a session rolls over on real login only (survives `/reload`)
-### Added
-- **InfoTrackers: new datatexts for the bottom bar** (modular, assignable like any other datatext): **Auctions** (running auctions + session gold, tooltip with counts, click opens the AH; a sold auction pops a toast + chat line with item and price), **Kills** (session kill counter) and **Loot** (items + gold looted + total vendor value of looted items)
-- **CharPanel: standalone character window** (disabled by default, opens via `/suichar`): own layout with slot columns showing quality-colored item names + `iLvl · GS`, character model, grouped stat sections (Attributes/Combat/Spells/Defense), bottom weapon row, own tabs for Character/Reputation/Skills/PvP rendered inside the window, BetterItem outfit button and active-scale display
+## [1.5.2] - 2026-11-02
 
 ### Changed
 - **Minimap menu hides what your class cannot use**: Blessings (Paladin), Totem Forge (Shaman), Healer Protection (healer classes) and Decurse (dispel classes) only appear for those classes
 - **Heal Grid is now the standalone HealGrid addon's code (v1.1.3)**: the built-in RaidGrid module was replaced by the same grid, options window (tabs, colors, test mode, cast highlight/castbar, macro pad, profiles, export/import) and click-cast system as the external addon; only the integration differs (settings live in the SentinelUI profile, German strings in `deDE_HealGrid.lua`, `/suirg`, `/suiheal`, `/suihg` plus `/healgrid` and `/hg` when the standalone addon is not loaded). Dropped with it: the old built-in HoT icons and missing-buff watch, which HealGrid does not have. An untouched two-binding click-cast list is expanded to the full button x modifier matrix
-- **Removed modules**: the custom CharPanel experiment (restored the Blizzard frame + movable stats panel), QuestScope, and the old Navigation module (superseded by the new Waypoints module)
-- **Call to Arms moved into the bottom datatext bar**: the horn icon now sits in the LeftChat panel next to Gold and Durability as a real datatext (click to broadcast, tooltip shows the cooldown left) instead of a ButtonBars icon; the 'Show the Call to Arms button' setting adds/removes it there and the old icon is retired from the button bar
-- **Messenger is one tabbed window now**: every whisper/BNet conversation is a tab on a single window instead of a separate frame per contact. Left-click a tab to open it, right-click for the contact menu, middle-click closes the tab. The window drags by its header band, resizes from the bottom-right grip (chat rows rewrap to the new width) and remembers position and size. Incoming whispers while the window is open mark their tab with an unread counter instead of stealing the active conversation; header, action buttons and subtitle act on the active tab. History, bubbles, smileys, links, the reply box with input history and the log viewer are unchanged
 
 ### Fixed
 - **World Buffs minimap tooltip crashed on mixed layer keys**: old sessions stored numeric layer ids, new ones are strings; sorting and comparing them raised 'attempt to compare number with string'. Both sorts in WorldBuffs now normalize the keys
@@ -31,6 +21,21 @@ standalone RLBetterItem release.
 - **Blessings and Heal Grid windows threw ADDON_ACTION_BLOCKED when dragged in combat**: they contain secure buttons, so `StartMoving` is now skipped during combat lockdown
 - **Mail datatext**: the bar and tooltip show the sender names (inbox when known, otherwise `GetLatestThreeSenders`) like the stock minimap mail icon, and an unverified pending flag no longer claims a count
 - **Waypoints**: `GetWorldPosFromMapPos` returns the instance id first, which was read as the position vector (an error every second); the arrow direction now calibrates the map axes, the corpse timer no longer indexes a function, minimap pins use the player position correctly, the arrow has no background, and the creation of the arrow frame no longer aborts the module (Questie's TomTom button now reaches the API facade)
+
+## [1.5.1] - 2026-11-01
+
+### Added
+- **Waypoints module** (`/way`, `/cway`, `/waylist`, `/wayresetall`): TomTom-style waypoint queue with crazy arrow (rotating pointer, distance, ETA), minimap pins, corpse arrow, ctrl-rightclick on the world map to drop a waypoint, and a TomTom-compatible API facade so Questie/other addons can feed waypoints when the real TomTom is not loaded
+- **Tracker history database** (`SentinelUITrackerDB`): kills/loot/auction datatexts now show session, last-session and lifetime totals; a session rolls over on real login only (survives `/reload`)
+- **InfoTrackers: new datatexts for the bottom bar** (modular, assignable like any other datatext): **Auctions** (running auctions + session gold, tooltip with counts, click opens the AH; a sold auction pops a toast + chat line with item and price), **Kills** (session kill counter) and **Loot** (items + gold looted + total vendor value of looted items)
+- **CharPanel: standalone character window** (disabled by default, opens via `/suichar`): own layout with slot columns showing quality-colored item names + `iLvl · GS`, character model, grouped stat sections (Attributes/Combat/Spells/Defense), bottom weapon row, own tabs for Character/Reputation/Skills/PvP rendered inside the window, BetterItem outfit button and active-scale display
+
+### Changed
+- **Removed modules**: the custom CharPanel experiment (restored the Blizzard frame + movable stats panel), QuestScope, and the old Navigation module (superseded by the new Waypoints module)
+- **Call to Arms moved into the bottom datatext bar**: the horn icon now sits in the LeftChat panel next to Gold and Durability as a real datatext (click to broadcast, tooltip shows the cooldown left) instead of a ButtonBars icon; the 'Show the Call to Arms button' setting adds/removes it there and the old icon is retired from the button bar
+- **Messenger is one tabbed window now**: every whisper/BNet conversation is a tab on a single window instead of a separate frame per contact. Left-click a tab to open it, right-click for the contact menu, middle-click closes the tab. The window drags by its header band, resizes from the bottom-right grip (chat rows rewrap to the new width) and remembers position and size. Incoming whispers while the window is open mark their tab with an unread counter instead of stealing the active conversation; header, action buttons and subtitle act on the active tab. History, bubbles, smileys, links, the reply box with input history and the log viewer are unchanged
+
+### Fixed
 - **Mail datatext**: `GetInboxNumItems` only reports near an open mailbox and `HasNewMail` lags for minutes after collecting; the datatext now reads the real inbox whenever possible, remembers the last known state after closing, and invalidates it on `UPDATE_PENDING_MAIL`
 - **Layer datatext jumped between values on target change**: the display now uses `serverID:shardUID` only (zone borders no longer flip the reading) and stays sticky until a real zone change
 
