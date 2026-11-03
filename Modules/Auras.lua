@@ -121,9 +121,8 @@ end
 -- Called from the XML template OnLoad
 function S:InitAuraButton(btn)
 	if InCombatLockdown() then
-		-- do absolutely nothing inside the secure spawn: even scheduling a
-		-- callback is insecure code in the chain and taints the button. The
-		-- out-of-combat pass below wires it up.
+		-- combat-spawned buttons: wiring happens on regen; UpdateAura guards
+		-- missing regions until then
 		return
 	end
 	S:SafeCall("Auras:Init", function()
@@ -151,9 +150,16 @@ function S:InitAuraButton(btn)
 		-- button an aura index, the button fills itself right away instead of
 		-- waiting for our next refresh pass - works mid-combat too since the
 		-- header's own update just spawned it
-		-- no OnAttributeChanged hook: insecure code inside the secure
-		-- attribute dispatch taints the header's layout (ClearAllPoints ->
-		-- ADDON_ACTION_BLOCKED). Content is filled by the polling refresh.
+		-- like the reference: the button fills itself when the header assigns
+		-- an index/target-slot; only the content calls are insecure, the
+		-- layout pass stays untouched
+		btn:SetScript("OnAttributeChanged", function(self2, attr, value)
+			if attr == "index" and value then
+				S:SafeCall("Auras:BtnFill", A.UpdateAura, A, self2, value)
+			elseif attr == "target-slot" and value then
+				S:SafeCall("Auras:BtnFill", A.UpdateWeapon, A, self2, value)
+			end
+		end)
 		local db = A.db[btn.filter == "HARMFUL" and "debuffs" or "buffs"]
 		S:CreateBackdrop(btn, "Default")
 		btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -187,6 +193,10 @@ end
 
 function A:ConfigureHeader(header)
 	if InCombatLockdown() then return S:RunOutOfCombat(self.ConfigureHeader, self, header) end
+	local db = self.db[header.kind]
+	local size = (db and db.size) or 32
+	header:SetAttribute("config-width", size)
+	header:SetAttribute("config-height", size)
 	local db = self.db[header.kind]
 	local size = floor((db.size or 32) / 2 + 0.5) * 2
 	local left = db.growthX == "LEFT"
@@ -230,6 +240,13 @@ function A:CreateHeader(kind)
 	header:SetClampedToScreen(true)
 	header:SetAttribute("unit", "player")
 	header:SetAttribute("filter", filter)
+	-- secure snippet like the reference: only the size is set inside the
+	-- restricted environment, everything else happens in addon code
+	header:SetAttribute("initialConfigFunction", [[
+		local header = self:GetParent()
+		self:SetWidth(header:GetAttribute("config-width") or 32)
+		self:SetHeight(header:GetAttribute("config-height") or 32)
+	]])
 	if RegisterAttributeDriver and (S.isRetail or S.isWrath or S.isCata or S.isMists) then
 		RegisterAttributeDriver(header, "unit", "[vehicleui] vehicle; player")
 	end
@@ -238,12 +255,9 @@ function A:CreateHeader(kind)
 	S:CreateMover(holder, kind, kind == "buffs" and L["Player Buffs"] or L["Player Debuffs"], pos, "auras")
 	self:ConfigureHeader(header)
 	header:Show()
-	-- own event processing off: its update path calls ClearAllPoints on the
-	-- protected children and would error whenever it runs under a tainted or
-	-- insecure call (this client does not exempt addon-created headers)
-	pcall(header.UnregisterAllEvents, header)
-	header:SetScript("OnEvent", nil)
-	header:SetScript("OnUpdate", nil)
+	-- the header keeps its own event/update system (like the reference
+	-- implementation): the template's spawn/layout path is fully secure as
+	-- long as no addon code runs inside it
 	-- the template keeps its own secure update: it can spawn and lay out
 	-- aura buttons even in combat, which is exactly what it was built for.
 	-- The old ADDON_ACTION_BLOCKED came from our insecure attribute hooks in
@@ -386,30 +400,8 @@ function A:RefreshHeaders(unit)
 		if InCombatLockdown() then
 			self:CombatRefresh(header)
 		else
-			-- re-enter the secure spawn/layout path: cycling the identity
-			-- attributes through a DIFFERENT value guarantees OnAttributeChanged
-			-- fires (unchanged values may not on this client)
-			local u = header:GetAttribute("unit") or "player"
-			local f = header:GetAttribute("filter") or "HELPFUL"
-			header:SetAttribute("unit", "none")
-			header:SetAttribute("unit", u)
-			-- if the unit cycle did not spawn buttons (handler cut or update
-			-- local), a filter cycle is the second trigger into the same path
-			local spawned = 0
-			for _, child in ipairs({ header:GetChildren() }) do
-				if child.GetAttribute and child:GetAttribute("index") then spawned = spawned + 1 end
-			end
-			local want = 0
-			for i = 1, 40 do if not S.GetAura(u, i, f) then break end want = want + 1 end
-			if spawned < want then
-				header:SetAttribute("filter", "NONE")
-				header:SetAttribute("filter", f)
-				C_Timer.After(0.5, function()
-					if not InCombatLockdown() then self:RefreshHeaders() end
-				end)
-			end
-			-- newly spawned children have no regions yet (template does not
-			-- call addon code anymore): wire them before filling contents
+			-- the header spawns and layouts itself (secure path); we only wire
+			-- children that spawned without regions and fill their contents
 			for _, child in ipairs({ header:GetChildren() }) do
 				if not child.icon then S:InitAuraButton(child) end
 			end
