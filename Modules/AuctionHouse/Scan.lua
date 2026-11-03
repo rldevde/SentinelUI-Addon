@@ -17,6 +17,7 @@ local COMMIT_CHUNK = 4000 -- DB writes per tick at the end
 local MAX_DROPS = 12
 
 local scan = { running = false }
+scan.lastDone = S.db and S.db.global and S.db.global.auctionLastScan
 AH.scan = scan
 
 -- Enum.ItemClass ids that can appear on the AH (Consumable .. Miscellaneous)
@@ -78,6 +79,9 @@ local function Done()
 	for _ in pairs(scan.seen or {}) do n = n + 1 end
 	scan.running, scan.committing = false, false
 	scan.lastDone = time()
+	-- persist the timestamp so the stale check survives a reload - otherwise
+	-- the auto-scan fires again on every AH visit after /reload
+	S.db.global.auctionLastScan = scan.lastDone
 	if AH.scanBtn then AH.scanBtn:Enable() end
 	if n == 0 then
 		AH:Status(L["Scan returned no items (empty AH or query blocked)"])
