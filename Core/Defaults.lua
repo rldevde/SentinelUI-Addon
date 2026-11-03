@@ -952,7 +952,7 @@ S.privateDefaults = {
 		sessionstats = { enable = true },
 		fishinghelper = { enable = true },
 		auctionhouse = { enable = false }, -- explicitly opt-in per user request
-		lfgenhance = { enable = true },
+		lfgenhance = { enable = false },
 		misc = { enable = true },
 		afk = { enable = true },
 		skins = { enable = true },

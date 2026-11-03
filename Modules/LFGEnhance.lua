@@ -252,6 +252,10 @@ function LE:Setup()
 end
 
 function LE:Initialize()
+	-- user asked for the stock Blizzard finder: every enhancement here
+	-- (row hooks, delist button) touched the window and broke its buttons
+	-- on this client, so the module stays completely inert
+	if true then return end
 	if not (self.db and self.db.enable) then return end
 	local FINDER_ADDONS = {
 		"Blizzard_GroupFinder_VanillaStyle", "Blizzard_LFGVanilla",
