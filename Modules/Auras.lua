@@ -61,7 +61,13 @@ function A:UpdateAura(btn, index)
 		btn.cd:Hide()
 		return
 	end
-	btn.icon:SetTexture(aura.icon)
+	if IsSecret(aura.icon) then
+		-- combat-hidden icon on secretAPI clients: SetTexture rejects secret
+		-- values, so show a neutral question mark rather than a black square
+		btn.icon:SetTexture(134400)
+	else
+		btn.icon:SetTexture(aura.icon)
+	end
 	local count = aura.applications
 	if IsSecret(count) then
 		btn.count:SetText(C_UnitAuras.GetAuraApplicationDisplayCount and aura.auraInstanceID and C_UnitAuras.GetAuraApplicationDisplayCount(unit, aura.auraInstanceID, 2, 999) or "")
@@ -248,7 +254,8 @@ local function OverlayFor(self, header, n)
 	ov.time:SetPoint("TOP", ov, "BOTTOM", 0, -2)
 	ov.filter = header:GetAttribute("filter")
 	ov.header = header
-	ov:EnableMouse(false)
+	ov:SetScript("OnEnter", OnEnter)
+	ov:SetScript("OnLeave", GameTooltip_Hide)
 	header.suiOverlays[n] = ov
 	return ov
 end
