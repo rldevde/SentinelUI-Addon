@@ -63,13 +63,15 @@ function A:UpdateAura(btn, index)
 		return
 	end
 	btn:SetAlpha(1)
-	if IsSecret(aura.icon) then
-		-- combat-hidden icon on secretAPI clients: SetTexture rejects secret
-		-- values, so show a neutral question mark rather than a black square
-		btn.icon:SetTexture(134400)
-	else
-		btn.icon:SetTexture(aura.icon)
+	-- icon via the spell texture API first: aura.icon can be nil or a secret
+	-- value this client hides from SetTexture (both end as black squares);
+	-- GetSpellTexture on the spell id returns a real file path either way
+	local tex
+	if aura.spellId and not IsSecret(aura.spellId) and GetSpellTexture then
+		tex = GetSpellTexture(aura.spellId)
 	end
+	if not tex and aura.icon and not IsSecret(aura.icon) then tex = aura.icon end
+	btn.icon:SetTexture(tex or 134400)
 	local count = aura.applications
 	if IsSecret(count) then
 		btn.count:SetText(C_UnitAuras.GetAuraApplicationDisplayCount and aura.auraInstanceID and C_UnitAuras.GetAuraApplicationDisplayCount(unit, aura.auraInstanceID, 2, 999) or "")
