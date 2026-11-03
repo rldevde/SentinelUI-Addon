@@ -51,8 +51,10 @@ function AH:PriceDB()
 	local fac = UnitFactionGroup and UnitFactionGroup("player") or "?"
 	S.db.global.auctionDB = S.db.global.auctionDB or {}
 	local key = realm .. "-" .. fac
-	if not S.db.global.auctionDB[key] then S.db.global.auctionDB[key] = {} end
-	return S.db.global.auctionDB[key]
+	local b = S.db.global.auctionDB[key]
+	if not b then b = {} S.db.global.auctionDB[key] = b end
+	b.realm = realm -- server name rides along for external DB exchange
+	return b
 end
 
 -- The anniversary client uses the 9-argument query signature
