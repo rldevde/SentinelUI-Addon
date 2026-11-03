@@ -825,7 +825,7 @@ S.defaults = {
 			undercut = 0, -- % undercut applied to the sell suggestion
 			duration = 2, -- 1/2/3 = 12/24/48h default auction duration
 			scanAlerts = true, -- chat feedback for scans/searches
-			autoScan = true, -- quiet background getAll scan when the AH opens and the DB is stale
+			autoScan = false, -- manual Vollscan only; the getAll call is expensive
 		},
 		skins = {
 			blizzard = true, character = true, spellbook = true, talents = true, quest = true, gossip = true,
