@@ -818,3 +818,9 @@ T("Click: open the menu", "Klick: Menü öffnen")
 T("War Logs", "Kampflogs")
 T("Alt Roster", "Twink-Liste")
 T("Profession Cooldowns", "Berufs-Abklingzeiten")
+
+-- Flare module
+local function T(k, v) if rawget(L, k) == nil then L[k] = v end end
+T("Flare", "Flare")
+T("Action buttons glow for missing buffs, weapon buffs, low reagents, cooldowns and old spell ranks.", "Aktionsbuttons leuchten bei fehlenden Buffs, Waffenbuffs, wenigen Reagenzien, bereiten Abklingzeiten und alten Zauberrängen auf.")
+T("Left-click: options  |  Right-click: buff glow on/off", "Linksklick: Optionen  |  Rechtsklick: Buff-Glow an/aus")

@@ -519,6 +519,15 @@ S.defaults = {
 		raidreset = {
 			enable = true,
 		},
+		flare = {
+			enable = true,
+			color = { 1.0, 0.62, 0.12 },
+			alpha = 1,
+			cooldownTime = 3,
+			reagentWarn = 5,
+			greaterMin = 2,
+			cats = { buffs = true, weapon = true, reagent = true, cooldown = true, rank = true },
+		},
 		instancetracker = {
 			timeStringType = "medium",
 			timeStampFormat = 12,
@@ -852,6 +861,7 @@ S.privateDefaults = {
 		dottracker = { enable = true },
 		trainer = { enable = true },
 		raidreset = { enable = true },
+		flare = { enable = true },
 		instancetracker = { enable = true },
 		worldbuffs = { enable = true },
 		guildhub = { enable = true },
