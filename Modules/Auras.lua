@@ -281,8 +281,13 @@ function A:CombatOverlay(header)
 	for i = 1, 40 do
 		local a = S.GetAura(unit, i, filter)
 		if not a then break end
-		order[#order + 1] = { index = i, exp = a.expirationTime or 0,
-			own = a.isFromPlayerOrPlayerPet or a.sourceUnit == "player" }
+		local exp = a.expirationTime
+		-- aura fields can be SECRET values in combat on this client: any
+		-- comparison with them errors and would kill the whole overlay pass
+		if IsSecret(exp) then exp = 0 end
+		local own = a.isFromPlayerOrPlayerPet
+		if IsSecret(own) then own = nil end
+		order[#order + 1] = { index = i, exp = tonumber(exp) or 0, own = own }
 	end
 	local byTime = (db.sortMethod or "TIME") == "TIME"
 	local asc = db.sortDir == "+"
