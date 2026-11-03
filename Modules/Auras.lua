@@ -233,7 +233,7 @@ local function OverlayFor(self, header, n)
 	if ov then return ov end
 	local db = self.db[header.kind]
 	local size = math.floor((db.size or 32) / 2 + 0.5) * 2
-	ov = CreateFrame("Button", nil, header.holder)
+	ov = CreateFrame("Button", nil, header)
 	ov:SetSize(size, size)
 	S:CreateBackdrop(ov, "Default")
 	ov.icon = ov:CreateTexture(nil, "ARTWORK")
@@ -291,8 +291,10 @@ function A:CombatOverlay(header)
 			ov.suiIndex = i
 			local slot = i - 1
 			local col, row = slot % perRow, math.floor(slot / perRow)
+			-- same anchor math as the header's own layout attributes
+			local pt = header:GetAttribute("point") or "TOPRIGHT"
 			ov:ClearAllPoints()
-			ov:SetPoint(down and "TOP" or "BOTTOM", header.holder, down and "TOP" or "BOTTOM",
+			ov:SetPoint(pt, header, pt,
 				(left and -1 or 1) * (col * (size + spacing)),
 				(down and -1 or 1) * (row * (size + (db.wrapSpacing or spacing))))
 			ov:Show()
