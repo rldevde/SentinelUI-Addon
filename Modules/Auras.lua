@@ -408,6 +408,11 @@ function A:RefreshHeaders(unit)
 					if not InCombatLockdown() then self:RefreshHeaders() end
 				end)
 			end
+			-- newly spawned children have no regions yet (template does not
+			-- call addon code anymore): wire them before filling contents
+			for _, child in ipairs({ header:GetChildren() }) do
+				if not child.icon then S:InitAuraButton(child) end
+			end
 			HideOverlays(header, 1)
 			self:CombatRefresh(header)
 		end
