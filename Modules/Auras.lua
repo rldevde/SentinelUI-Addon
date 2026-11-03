@@ -249,15 +249,28 @@ function A:RefreshHeaders(unit)
 		if InCombatLockdown() then
 			self:CombatRefresh(header)
 		else
-			-- re-set BOTH identity attributes: on some clients SetAttribute with
-			-- an unchanged value does not fire OnAttributeChanged, so cycling
-			-- them through a different value forces the secure spawn/layout
-			-- path to actually re-run and new auras get buttons
+			-- re-enter the secure spawn/layout path: cycling the identity
+			-- attributes through a DIFFERENT value guarantees OnAttributeChanged
+			-- fires (unchanged values may not on this client)
 			local u = header:GetAttribute("unit") or "player"
 			local f = header:GetAttribute("filter") or "HELPFUL"
 			header:SetAttribute("unit", "none")
 			header:SetAttribute("unit", u)
-			header:SetAttribute("filter", f)
+			-- if the unit cycle did not spawn buttons (handler cut or update
+			-- local), a filter cycle is the second trigger into the same path
+			local spawned = 0
+			for _, child in ipairs({ header:GetChildren() }) do
+				if child.GetAttribute and child:GetAttribute("index") then spawned = spawned + 1 end
+			end
+			local want = 0
+			for i = 1, 40 do if not S.GetAura(u, i, f) then break end want = want + 1 end
+			if spawned < want then
+				header:SetAttribute("filter", "NONE")
+				header:SetAttribute("filter", f)
+				C_Timer.After(0.5, function()
+					if not InCombatLockdown() then self:RefreshHeaders() end
+				end)
+			end
 			self:CombatRefresh(header)
 		end
 	end
