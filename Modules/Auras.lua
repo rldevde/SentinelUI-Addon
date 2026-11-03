@@ -317,6 +317,9 @@ function A:CombatRefresh(header)
 	-- insecure overlay icon so they still show mid-fight
 	self:CombatOverlay(header)
 	for _, child in ipairs({ header:GetChildren() }) do
+		-- secure children are the invisible right-click layer now: alpha 0
+		-- still receives the cancelaura click, the overlay does the drawing
+		child:SetAlpha(0)
 		if child.GetAttribute then
 			local index = child:GetAttribute("index")
 			if index then
