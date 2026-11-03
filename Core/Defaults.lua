@@ -562,6 +562,8 @@ S.defaults = {
 			autoCavernsFlight = true,
 			autoCavernsArthas = true,
 		},
+		warlogs = { enable = true },
+		wildbuffs = { enable = true },
 		worldbuffs = {
 			announceYell = true,
 			middleWarning = true,
