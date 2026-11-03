@@ -330,18 +330,18 @@ function buy:Build(pf)
 	-- buy bar
 	local buyBtn = CreateFrame("Button", nil, right, "UIPanelButtonTemplate")
 	buyBtn:SetSize(110, 22)
-	buyBtn:SetPoint("BOTTOMRIGHT", -8, 6)
+	buyBtn:SetPoint("TOPRIGHT", right, "TOPRIGHT", -8, -(62 + VISIBLE * ROW_H + 8))
 	buyBtn:SetText(L["Buy"])
 	if S.SkinButton then S:SkinButton(buyBtn) end
 	buyBtn:SetScript("OnClick", function() buy:Buy() end)
 	self.buyBtn = buyBtn
 	self.selText = S:FontString(right, 10, nil, S.media.unitFont)
-	self.selText:SetPoint("BOTTOMLEFT", 8, 10)
+	self.selText:SetPoint("TOPLEFT", right, "TOPLEFT", 8, -(62 + VISIBLE * ROW_H + 10))
 	self.selText:SetJustifyH("LEFT")
 
 	-- recent searches: clickable strip above the selection line
 	self.recentLabel = S:FontString(right, 9, nil, S.media.unitFont)
-	self.recentLabel:SetPoint("BOTTOMLEFT", 8, 26)
+	self.recentLabel:SetPoint("TOPLEFT", right, "TOPLEFT", 8, -(62 + VISIBLE * ROW_H + 28))
 	self.recentLabel:SetText(L["Recent:"])
 	self.recentBtns = {}
 	local prev = self.recentLabel
