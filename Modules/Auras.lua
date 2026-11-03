@@ -55,14 +55,16 @@ function A:UpdateAura(btn, index)
 	if not aura then
 		-- assigned slot but the aura is gone: hide the whole button so no
 		-- empty black square lingers (alpha, not Hide - combat safe)
-		btn:SetAlpha(0)
+		btn.icon:SetAlpha(0)
 		btn.icon:SetTexture(nil)
 		btn.count:SetText("")
 		btn.time:SetText("")
 		btn.cd:Hide()
+		if btn.suiBackdrop then btn.suiBackdrop:SetAlpha(0) end
 		return
 	end
-	btn:SetAlpha(1)
+	btn.icon:SetAlpha(1)
+	if btn.suiBackdrop then btn.suiBackdrop:SetAlpha(1) end
 	-- icon via the spell texture API first: aura.icon can be nil or a secret
 	-- value this client hides from SetTexture (both end as black squares);
 	-- GetSpellTexture on the spell id returns a real file path either way
@@ -355,7 +357,6 @@ function A:CombatRefresh(header)
 	-- insecure overlay icon so they still show mid-fight
 	self:CombatOverlay(header)
 	for _, child in ipairs({ header:GetChildren() }) do
-		child:SetAlpha(1)
 		if child.GetAttribute then
 			local index = child:GetAttribute("index")
 			if index then
