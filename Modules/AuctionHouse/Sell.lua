@@ -63,7 +63,8 @@ function sell:Select(r)
 	local it = r.data
 	if not it then return end
 	self.selected = it
-	self.selName:SetText("|cffffffff" .. it.name .. "|r  x" .. it.count)
+	self.selName:SetText("|cffffffff" .. it.name .. "|r  x" .. it.count
+		.. "  |cff888888(" .. format(L["%d total in bags"], self:TotalCount(it.id)) .. ")|r")
 	if self.stackBox then
 		self.stackBox:SetText(tostring(it.count))
 		self.numBox:SetText("1")
@@ -134,7 +135,8 @@ function sell:Deposit()
 	local bid = floor(unit * stack * 0.95)
 	local d = GetAuctionDeposit(AH.db.duration or 2, math.min(bid, MAXIMUM_BID_PRICE or 2147483647),
 		math.min(unit * stack, MAXIMUM_BID_PRICE or 2147483647), stack, num)
-	self.depoText:SetText(L["Deposit"] .. ": " .. AH:Money(d or 0))
+	self.depoText:SetText(L["Deposit"] .. ": " .. AH:Money(d or 0)
+		.. "  |cff888888- " .. format(L["total %s"], AH:Money(unit * stack * num)) .. "|r")
 end
 
 -- count of the selected itemID across all bag slots (multisell can pull
@@ -286,7 +288,7 @@ function sell:Build(pf)
 	if S.SkinEditBox then S:SkinEditBox(sb) end
 	self.stackBox = sb
 	local nlbl = S:FontString(right, 9, nil, S.media.unitFont)
-	nlbl:SetPoint("LEFT", sb, "RIGHT", 8, 0); nlbl:SetText("x")
+	nlbl:SetPoint("LEFT", sb, "RIGHT", 8, 0); nlbl:SetText(L["x stacks"])
 	local nb = CreateFrame("EditBox", nil, right, "InputBoxTemplate")
 	nb:SetSize(30, 18); nb:SetAutoFocus(false); nb:SetNumeric(true); nb:SetMaxLetters(2)
 	nb:SetPoint("LEFT", nlbl, "RIGHT", 4, 0)
