@@ -282,23 +282,42 @@ function A:CombatOverlay(header)
 	local perRow, spacing = db.perRow or 8, (db.spacing or 2)
 	local left = db.growthX == "LEFT"
 	local down = db.growthY == "DOWN"
-	local n = 0
+	-- display order must equal the header's own sorting or overlays land on
+	-- wrong slots: own auras first (separateOwn), then by time (longest
+	-- first for "-"), INDEX falls back to raw aura order
+	local order = {}
 	for i = 1, 40 do
-		if not S.GetAura(unit, i, filter) then break end
-		if not used[i] then
+		local a = S.GetAura(unit, i, filter)
+		if not a then break end
+		order[#order + 1] = { index = i, exp = a.expirationTime or 0,
+			own = a.isFromPlayerOrPlayerPet or a.sourceUnit == "player" }
+	end
+	local byTime = (db.sortMethod or "TIME") == "TIME"
+	local asc = db.sortDir == "+"
+	table.sort(order, function(a, b)
+		if db.separateOwn == 1 and a.own ~= b.own then return a.own end
+		if byTime then
+			if a.exp ~= b.exp then return asc and a.exp < b.exp or a.exp > b.exp end
+		elseif a.index ~= b.index then
+			return asc and a.index < b.index or a.index > b.index
+		end
+		return a.index < b.index
+	end)
+	local pt = header:GetAttribute("point") or "TOPRIGHT"
+	local n = 0
+	for slot = 1, #order do
+		local e = order[slot]
+		if not used[e.index] then
 			n = n + 1
 			local ov = OverlayFor(self, header, n)
-			ov.suiIndex = i
-			local slot = i - 1
-			local col, row = slot % perRow, math.floor(slot / perRow)
-			-- same anchor math as the header's own layout attributes
-			local pt = header:GetAttribute("point") or "TOPRIGHT"
+			ov.suiIndex = e.index
+			local col, row = (slot - 1) % perRow, math.floor((slot - 1) / perRow)
 			ov:ClearAllPoints()
 			ov:SetPoint(pt, header, pt,
 				(left and -1 or 1) * (col * (size + spacing)),
 				(down and -1 or 1) * (row * (size + (db.wrapSpacing or spacing))))
 			ov:Show()
-			S:SafeCall("Auras:Overlay", self.UpdateAura, self, ov, i)
+			S:SafeCall("Auras:Overlay", self.UpdateAura, self, ov, e.index)
 		end
 	end
 	HideOverlays(header, n + 1)
