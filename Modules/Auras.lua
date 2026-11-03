@@ -296,6 +296,7 @@ local function HideOverlays(header, from)
 end
 
 function A:CombatOverlay(header)
+	if not header then return end
 	local db = self.db[header.kind]
 	local unit = header:GetAttribute("unit") or "player"
 	local filter = header:GetAttribute("filter") or "HELPFUL"
@@ -360,6 +361,7 @@ function A:CombatRefresh(header)
 	-- contents of already-spawned buttons are plain display ops (icon, timer,
 	-- stacks) -> safe even in combat; auras without a spawned button get an
 	-- insecure overlay icon so they still show mid-fight
+	if not header then return end
 	self:CombatOverlay(header)
 	for _, child in ipairs({ header:GetChildren() }) do
 		if child.GetAttribute then
