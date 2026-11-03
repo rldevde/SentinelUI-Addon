@@ -270,6 +270,13 @@ function A:CombatOverlay(header)
 	local db = self.db[header.kind]
 	local unit = header:GetAttribute("unit") or "player"
 	local filter = header:GetAttribute("filter") or "HELPFUL"
+	local used = {}
+	for _, child in ipairs({ header:GetChildren() }) do
+		if child.GetAttribute then
+			local ix = child:GetAttribute("index")
+			if ix then used[ix] = true end
+		end
+	end
 	local size = math.floor((db.size or 32) / 2 + 0.5) * 2
 	local perRow, spacing = db.perRow or 8, (db.spacing or 2)
 	local left = db.growthX == "LEFT"
@@ -301,9 +308,12 @@ function A:CombatOverlay(header)
 		return a.index < b.index
 	end)
 	local pt = header:GetAttribute("point") or "TOPRIGHT"
+	local n = 0
 	for slot = 1, #order do
 		local e = order[slot]
-		local ov = OverlayFor(self, header, slot)
+		if used[e.index] then e.skip = true else
+		n = n + 1
+		local ov = OverlayFor(self, header, n)
 		ov.suiIndex = e.index
 		local col, row = (slot - 1) % perRow, math.floor((slot - 1) / perRow)
 		ov:ClearAllPoints()
@@ -312,8 +322,9 @@ function A:CombatOverlay(header)
 			(down and -1 or 1) * (row * (size + (db.wrapSpacing or spacing))))
 		ov:Show()
 		S:SafeCall("Auras:Overlay", self.UpdateAura, self, ov, e.index)
+		end
 	end
-	HideOverlays(header, #order + 1)
+	HideOverlays(header, n + 1)
 end
 
 function A:CombatRefresh(header)
@@ -322,9 +333,7 @@ function A:CombatRefresh(header)
 	-- insecure overlay icon so they still show mid-fight
 	self:CombatOverlay(header)
 	for _, child in ipairs({ header:GetChildren() }) do
-		-- secure children are the invisible right-click layer now: alpha 0
-		-- still receives the cancelaura click, the overlay does the drawing
-		child:SetAlpha(0)
+		child:SetAlpha(1)
 		if child.GetAttribute then
 			local index = child:GetAttribute("index")
 			if index then
