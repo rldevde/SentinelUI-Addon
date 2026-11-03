@@ -1106,7 +1106,7 @@ function S:BuildOptions()
 		{ "raidcooldowns", L["Raid Cooldowns"] }, { "dottracker", L["DoT Tracker"] }, { "trainer", L["Trainer"] }, { "decurse", L["Decurse"] }, { "flare", L["Flare"] },
 		{ "rep", L["Reputation"] }, { "itemsync", L["Item Sync"] }, { "bugfolder", L["BugFolder"] }, { "messenger", L["Messenger"] }, { "seelast", L["SeeLast"] },
 		{ "buttonBars", L["Button Bars"] }, { "announcer", L["Announcer"] }, { "magebar", L["Mage Bar"] }, { "damagemeter", L["Damage Meter"] },
-		{ "worldmap", L["World Map"] }, { "instancetracker", L["Instance Tracker"] }, { "worldbuffs", L["World Buffs"] },
+		{ "worldmap", L["World Map"] }, { "instancetracker", L["Instance Tracker"] }, { "worldbuffs", L["World Buffs"] }, { "wildbuffs", L["World Buffs"] },
 		{ "guildhub", L["Guild Chronicle"] }, { "talentatlas", L["Talent Atlas"] },
 		{ "interruptalert", L["Interrupt Alert"] }, { "healerprot", L["Healer Protection"] }, { "blessings", L["Blessings"] },
 		{ "raidcheck", L["Raid Check"] }, { "raidgrid", L["Heal Grid"] }, { "totemforge", L["Totem Forge"] },
