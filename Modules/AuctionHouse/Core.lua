@@ -295,7 +295,7 @@ function AH:Initialize()
 		if AH.db.autoScan ~= false and AH.scan and not AH.scan.running then
 			local can = true
 			if CanSendAuctionQuery then can = CanSendAuctionQuery() end
-			local stale = not AH.scan.lastDone or (time() - AH.scan.lastDone) > 900
+			local stale = not AH.scan.lastDone or (time() - AH.scan.lastDone) > 86400
 			if can and stale then
 				AH:Status(L["Auto-scanning auction house..."])
 				AH.scan:Start()

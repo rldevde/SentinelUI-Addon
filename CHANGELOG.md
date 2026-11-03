@@ -17,6 +17,7 @@ standalone RLBetterItem release.
 - **Module toggles are grouped too**: the ~120 checkboxes on the Modules page now sit in the same icon-labeled categories (Interface, Chat & Social, Raid & Dungeons, Combat & Class, World & Quest, Auction & Loot, Utility)
 
 ### Fixed
+- **Auction auto-scan interval raised to 24 hours** instead of re-scanning on every auction house visit after 15 minutes
 - **Auction scan froze the game**: reading the whole auction list in one frame stalled the PC; the scan now processes 400 auctions per tick
 - **Group finder is 100% stock Blizzard now** (no skin, no hooks, and no longer moved by Window Mover - making it draggable swallowed the close and tab button clicks); the previous entry point: no skin, no hooks, no delist button, no role-check wrappers - the whole LFG window is untouched; the previous entry point: restyling the window (PVEFrame included) broke tab switching, the role check and group search - no LFG frame is touched anymore and the row hooks only attach to real listing rows inside a scroll list; the delist button hides unless you are listed
 - **Buff icons vanished in combat**: aura expiration and caster fields arrive as secret values mid-fight on this client, and comparing them aborted the overlay pass; they are now unwrapped before sorting
