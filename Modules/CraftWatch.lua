@@ -147,16 +147,26 @@ function CW:ShowBest()
 		end
 		self.best = f
 	end
-	local list = {}
+	local list, priced = {}, 0
 	for id, r in pairs(Store().recipes) do
 		local sell = Price(id)
-		if sell then list[#list + 1] = { name = r.name, prof = r.prof, who = r.who, p = sell } end
+		if sell then priced = priced + 1 end
+		list[#list + 1] = { name = r.name, prof = r.prof, who = r.who, p = sell }
 	end
-	table.sort(list, function(a, b) return a.p > b.p end)
+	table.sort(list, function(a, b) return (a.p or -1) > (b.p or -1) end)
+	if #list == 0 then
+		f.rows[1]:SetText(L["No recipes recorded yet - open a profession window once."])
+	elseif priced == 0 then
+		f.rows[1]:SetText(L["No prices yet - run an auction house scan."])
+	end
 	for i = 1, 18 do
 		local e = list[i]
-		f.rows[i]:SetFormattedText(e and "|cffcccccc%s|r |cff888888(%s, %s)|r  |cff33ff33+%s|r"
-			or "", e and e.name or "", e and e.prof or "", e and e.who or "", e and MoneyShort(e.p) or "")
+		if e then
+			f.rows[i]:SetFormattedText("|cffcccccc%s|r |cff888888(%s, %s)|r  %s",
+				e.name, e.prof, e.who, e.p and ("|cff33ff33+" .. MoneyShort(e.p) .. "|r") or "|cff888888?|r")
+		elseif #list > 0 then
+			f.rows[i]:SetText("")
+		end
 	end
 	f:Show()
 end
