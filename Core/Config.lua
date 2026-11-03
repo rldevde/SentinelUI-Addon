@@ -1075,17 +1075,62 @@ function S:BuildOptions()
 		{ "notes", L["Notes"] },
 	}
 	m.args.desc = { type = "description", name = L["Enabling or disabling a module requires a reload. These settings are per character."], order = 0 }
-	for i, info in ipairs(mods) do
-		m.args[info[1]] = PrivateToggle(info[1], "enable", info[2], i)
+	-- modules grouped into categories so the wall of toggles stays readable;
+	-- group names carry an inline icon
+	local cats = {
+		{ id = "ui", name = L["Interface"], icon = "Interface/Icons/INV_Misc_Gear_01", order = 1 },
+		{ id = "chat", name = L["Chat & Social"], icon = "Interface/Icons/INV_Misc_Note_02", order = 2 },
+		{ id = "raid", name = L["Raid & Dungeons"], icon = "Interface/Icons/INV_Helmet_08", order = 3 },
+		{ id = "combat", name = L["Combat & Class"], icon = "Interface/Icons/INV_Sword_04", order = 4 },
+		{ id = "world", name = L["World & Quest"], icon = "Interface/Icons/INV_Misc_Map_01", order = 5 },
+		{ id = "loot", name = L["Auction & Loot"], icon = "Interface/Icons/INV_Misc_Coin_01", order = 6 },
+		{ id = "util", name = L["Utility"], icon = "Interface/Icons/INV_Misc_Note_01", order = 7 },
+	}
+	local catOf = {
+		actionbars = "ui", unitframes = "ui", nameplates = "ui", auras = "ui", tooltip = "ui", bags = "ui",
+		datatexts = "ui", databars = "ui", minimap = "ui", misc = "ui", afk = "ui", skins = "ui",
+		windowmover = "ui", buttonbars = "ui", cursorring = "ui",
+		chat = "chat", messenger = "chat", seelast = "chat", announcer = "chat", groupbulletin = "chat",
+		keywordinvite = "chat", spamfilter = "chat", guildhub = "chat", rezannouncer = "chat", enemycastannounce = "chat",
+		instancetracker = "raid", raidcd = "raid", raidcheck = "raid", raidgrid = "raid", bosswatch = "raid",
+		pulltimer = "raid", raidmarker = "raid", bgtools = "raid", speedrun = "raid", trinkettracker = "raid",
+		worldbuffs = "raid", damagemeter = "raid", enemyradar = "raid", lfgenhance = "raid",
+		decurse = "combat", healerprot = "combat", blessings = "combat", totemforge = "combat", flare = "combat",
+		dottracker = "combat", interruptalert = "combat", interrupttracker = "combat", ccbreak = "combat",
+		tauntresist = "combat", aggroalert = "combat", threatmeter = "combat", diminishing = "combat",
+		executealert = "combat", procalert = "combat", manatick = "combat", swingtimer = "combat",
+		magebar = "combat", weaponbuff = "combat", pethappiness = "combat", huntertools = "combat",
+		fearward = "combat", soulstonetracker = "combat", banishtimer = "combat", bopwarn = "combat",
+		purgealert = "combat", externalbuffs = "combat", selfbuffs = "combat", aurawatcher = "combat",
+		cooldowntracker = "combat", potionreminder = "combat", combatlog = "combat", clickcast = "combat",
+		rangedisplay = "combat", targetcounter = "combat",
+		waypoints = "world", worldmap = "world", gathernotes = "world", mapinfo = "world", zeptimer = "world",
+		questitems = "world", spellsearch = "world", notes = "world", weaponskill = "world",
+		fishinghelper = "world", flighttimer = "world", trainer = "world",
+		itemsync = "loot", disenchant = "loot", craftqueue = "loot", mailgetall = "loot", profcds = "loot",
+		lootfilter = "loot", pricehistory = "loot", auctionhouse = "loot", lootbrowser = "loot",
+		loothistory = "loot", counters = "loot",
+		rep = "util", bugfolder = "util", altroster = "util", sessionstats = "util", screenshots = "util",
+		timermodule = "util", autoaccept = "util", fastloot = "util", deathrecap = "util",
+		rankreminder = "util", summonhelper = "util", foodreminder = "util", talentatlas = "util",
+	}
+	local catArgs = {}
+	for _, c in ipairs(cats) do
+		catArgs[c.id] = { type = "group", name = "|T" .. c.icon .. ":14:14|t " .. c.name, order = c.order, inline = true, args = {} }
+		m.args["cat_" .. c.id] = catArgs[c.id]
 	end
-	m.args.blizz = { type = "header", name = L["Blizzard frames"], order = 50 }
+	for i, info in ipairs(mods) do
+		local g = catArgs[catOf[info[1]] or "util"]
+		g.args[info[1]] = PrivateToggle(info[1], "enable", info[2], i)
+	end
+	m.args.blizz = { type = "group", name = "|TInterface/Icons/INV_Misc_QuestionMark:14:14|t " .. L["Blizzard frames"], order = 50, inline = true, args = {} }
 	local bl = {
 		{ "unitframes", "disableBlizzardPlayer", L["Hide Blizzard player frame"] }, { "unitframes", "disableBlizzardTarget", L["Hide Blizzard target frame"] },
 		{ "unitframes", "disableBlizzardFocus", L["Hide Blizzard focus frame"] }, { "unitframes", "disableBlizzardParty", L["Hide Blizzard party frames"] },
 		{ "unitframes", "disableBlizzardRaid", L["Hide Blizzard raid frames"] }, { "unitframes", "disableBlizzardBoss", L["Hide Blizzard boss frames"] },
 		{ "actionbars", "hideBlizzard", L["Hide Blizzard action bars"] }, { "auras", "disableBlizzard", L["Hide Blizzard buffs"] }, { "bags", "bank", L["Use SentinelUI bank (Classic)"] },
 	}
-	for i, info in ipairs(bl) do m.args[info[1] .. info[2]] = PrivateToggle(info[1], info[2], info[3], 50 + i) end
+	for i, info in ipairs(bl) do m.args.blizz.args[info[1] .. info[2]] = PrivateToggle(info[1], info[2], info[3], i) end
 	root.args.modules = m
 
 	root.args.profiles = LibStub("AceDBOptions-3.0"):GetOptionsTable(self.db)

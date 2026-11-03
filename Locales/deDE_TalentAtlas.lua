@@ -824,3 +824,11 @@ local function T(k, v) if rawget(L, k) == nil then L[k] = v end end
 T("Flare", "Flare")
 T("Action buttons glow for missing buffs, weapon buffs, low reagents, cooldowns and old spell ranks.", "Aktionsbuttons leuchten bei fehlenden Buffs, Waffenbuffs, wenigen Reagenzien, bereiten Abklingzeiten und alten Zauberrängen auf.")
 T("Left-click: options  |  Right-click: buff glow on/off", "Linksklick: Optionen  |  Rechtsklick: Buff-Glow an/aus")
+
+-- settings module categories
+T("Chat & Social", "Chat & Soziales")
+T("Raid & Dungeons", "Schlachtzug & Dungeons")
+T("Combat & Class", "Kampf & Klasse")
+T("World & Quest", "Welt & Quest")
+T("Auction & Loot", "Auktion & Beute")
+T("Utility", "Werkzeuge")
