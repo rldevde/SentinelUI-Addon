@@ -121,6 +121,20 @@ local function OnRowClick(row, button)
 	end
 end
 
+-- only real listing rows get hooked: a row must live inside a scroll list
+-- AND be anonymous - hooking category/role buttons tainted their secure
+-- click handlers and broke tab switching and the role check entirely
+local function InScrollList(btn)
+	local p = btn:GetParent()
+	for _ = 1, 4 do
+		if not p then return false end
+		local n = p.GetName and p:GetName() or ""
+		if n:find("Scroll") or n:find("List") or n:find("list") then return true end
+		p = p.GetParent and p:GetParent()
+	end
+	return false
+end
+
 local function HookRows(frame, depth)
 	depth = depth or 0
 	if not frame or depth > 6 or not frame.GetChildren then return end
@@ -129,8 +143,8 @@ local function HookRows(frame, depth)
 		local c = select(i, frame:GetChildren())
 		if c and not hooked[c] and (not c.IsForbidden or not c:IsForbidden()) then
 			local otype = c.GetObjectType and c:GetObjectType()
-			if otype == "Button" and not IsControlName(c:GetName()) and c.GetRegions then
-				-- listing rows are anonymous buttons with text regions
+			if otype == "Button" and not IsControlName(c:GetName()) and c.GetRegions
+				and InScrollList(c) then
 				hooked[c] = true
 				c:HookScript("OnMouseUp", OnRowClick)
 			end
@@ -210,7 +224,7 @@ local function AddDelistButton(parent)
 		self.t = self.t + dt
 		if self.t < 0.5 then return end
 		self.t = 0
-		self:SetEnabled(IsListed())
+		self:SetShown(IsListed())
 		fs:SetAlpha(IsListed() and 1 or 0.4)
 	end)
 	parent.suiDelist = btn
