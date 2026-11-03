@@ -223,10 +223,90 @@ function A:CreateHeader(kind)
 	self[kind] = header
 end
 
+-- plain (insecure) overlay icons used IN COMBAT for auras that arrived after
+-- the header last spawned a button: protected children cannot be created
+-- mid-fight, but display frames can, so every new buff shows immediately and
+-- the secure button takes over at regen. No cancelaura in combat either way.
+local function OverlayFor(self, header, n)
+	header.suiOverlays = header.suiOverlays or {}
+	local ov = header.suiOverlays[n]
+	if ov then return ov end
+	local db = self.db[header.kind]
+	local size = math.floor((db.size or 32) / 2 + 0.5) * 2
+	ov = CreateFrame("Button", nil, header.holder)
+	ov:SetSize(size, size)
+	S:CreateBackdrop(ov, "Default")
+	ov.icon = ov:CreateTexture(nil, "ARTWORK")
+	S:SetInside(ov.icon, ov, 0, 0)
+	ov.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+	ov.cd = CreateFrame("Cooldown", nil, ov, "CooldownFrameTemplate")
+	S:SetInside(ov.cd, ov, 0, 0)
+	ov.cd:SetReverse(true)
+	ov.cd:SetDrawEdge(false)
+	ov.cd:SetHideCountdownNumbers(true)
+	ov.cd:SetSwipeColor(0, 0, 0, 0.55)
+	local th = CreateFrame("Frame", nil, ov)
+	th:SetAllPoints()
+	th:SetFrameLevel(ov:GetFrameLevel() + 3)
+	ov.count = S:FontString(th, self.db.fontSize, "OUTLINE", S.media.numberFont)
+	ov.count:SetPoint("BOTTOMRIGHT", -1, 2)
+	ov.time = S:FontString(ov, self.db.fontSize, "OUTLINE", S.media.numberFont)
+	ov.time:SetPoint("TOP", ov, "BOTTOM", 0, -2)
+	ov.filter = header:GetAttribute("filter")
+	ov.header = header
+	ov:SetScript("OnEnter", OnEnter)
+	ov:SetScript("OnLeave", GameTooltip_Hide)
+	header.suiOverlays[n] = ov
+	return ov
+end
+
+local function HideOverlays(header, from)
+	for i = from or 1, header.suiOverlays and #header.suiOverlays or 0 do
+		header.suiOverlays[i]:Hide()
+		header.suiOverlays[i].suiIndex = nil
+	end
+end
+
+function A:CombatOverlay(header)
+	local db = self.db[header.kind]
+	local unit = header:GetAttribute("unit") or "player"
+	local filter = header:GetAttribute("filter") or "HELPFUL"
+	local used = {}
+	for _, child in ipairs({ header:GetChildren() }) do
+		if child.GetAttribute then
+			local ix = child:GetAttribute("index")
+			if ix then used[ix] = true end
+		end
+	end
+	local size = math.floor((db.size or 32) / 2 + 0.5) * 2
+	local perRow, spacing = db.perRow or 8, (db.spacing or 2)
+	local left = db.growthX == "LEFT"
+	local down = db.growthY == "DOWN"
+	local n = 0
+	for i = 1, 40 do
+		if not S.GetAura(unit, i, filter) then break end
+		if not used[i] then
+			n = n + 1
+			local ov = OverlayFor(self, header, n)
+			ov.suiIndex = i
+			local slot = i - 1
+			local col, row = slot % perRow, math.floor(slot / perRow)
+			ov:ClearAllPoints()
+			ov:SetPoint(down and "TOP" or "BOTTOM", header.holder, down and "TOP" or "BOTTOM",
+				(left and -1 or 1) * (col * (size + spacing)),
+				(down and -1 or 1) * (row * (size + (db.wrapSpacing or spacing))))
+			ov:Show()
+			S:SafeCall("Auras:Overlay", self.UpdateAura, self, ov, i)
+		end
+	end
+	HideOverlays(header, n + 1)
+end
+
 function A:CombatRefresh(header)
 	-- contents of already-spawned buttons are plain display ops (icon, timer,
-	-- stacks) -> safe even in combat; new buttons only appear via the
-	-- out-of-combat header update
+	-- stacks) -> safe even in combat; auras without a spawned button get an
+	-- insecure overlay icon so they still show mid-fight
+	self:CombatOverlay(header)
 	for _, child in ipairs({ header:GetChildren() }) do
 		if child.GetAttribute then
 			local index = child:GetAttribute("index")
@@ -271,6 +351,7 @@ function A:RefreshHeaders(unit)
 					if not InCombatLockdown() then self:RefreshHeaders() end
 				end)
 			end
+			HideOverlays(header, 1)
 			self:CombatRefresh(header)
 		end
 	end
