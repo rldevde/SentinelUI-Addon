@@ -254,8 +254,7 @@ local function OverlayFor(self, header, n)
 	ov.time:SetPoint("TOP", ov, "BOTTOM", 0, -2)
 	ov.filter = header:GetAttribute("filter")
 	ov.header = header
-	ov:SetScript("OnEnter", OnEnter)
-	ov:SetScript("OnLeave", GameTooltip_Hide)
+	ov:EnableMouse(false)
 	header.suiOverlays[n] = ov
 	return ov
 end
@@ -271,13 +270,6 @@ function A:CombatOverlay(header)
 	local db = self.db[header.kind]
 	local unit = header:GetAttribute("unit") or "player"
 	local filter = header:GetAttribute("filter") or "HELPFUL"
-	local used = {}
-	for _, child in ipairs({ header:GetChildren() }) do
-		if child.GetAttribute then
-			local ix = child:GetAttribute("index")
-			if ix then used[ix] = true end
-		end
-	end
 	local size = math.floor((db.size or 32) / 2 + 0.5) * 2
 	local perRow, spacing = db.perRow or 8, (db.spacing or 2)
 	local left = db.growthX == "LEFT"
@@ -304,23 +296,19 @@ function A:CombatOverlay(header)
 		return a.index < b.index
 	end)
 	local pt = header:GetAttribute("point") or "TOPRIGHT"
-	local n = 0
 	for slot = 1, #order do
 		local e = order[slot]
-		if not used[e.index] then
-			n = n + 1
-			local ov = OverlayFor(self, header, n)
-			ov.suiIndex = e.index
-			local col, row = (slot - 1) % perRow, math.floor((slot - 1) / perRow)
-			ov:ClearAllPoints()
-			ov:SetPoint(pt, header, pt,
-				(left and -1 or 1) * (col * (size + spacing)),
-				(down and -1 or 1) * (row * (size + (db.wrapSpacing or spacing))))
-			ov:Show()
-			S:SafeCall("Auras:Overlay", self.UpdateAura, self, ov, e.index)
-		end
+		local ov = OverlayFor(self, header, slot)
+		ov.suiIndex = e.index
+		local col, row = (slot - 1) % perRow, math.floor((slot - 1) / perRow)
+		ov:ClearAllPoints()
+		ov:SetPoint(pt, header, pt,
+			(left and -1 or 1) * (col * (size + spacing)),
+			(down and -1 or 1) * (row * (size + (db.wrapSpacing or spacing))))
+		ov:Show()
+		S:SafeCall("Auras:Overlay", self.UpdateAura, self, ov, e.index)
 	end
-	HideOverlays(header, n + 1)
+	HideOverlays(header, #order + 1)
 end
 
 function A:CombatRefresh(header)
