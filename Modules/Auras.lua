@@ -121,10 +121,10 @@ end
 -- Called from the XML template OnLoad
 function S:InitAuraButton(btn)
 	if InCombatLockdown() then
-		-- combat-spawned buttons get the full init after regen: every call
-		-- here touches a protected frame and would taint it -> the header's
-		-- own ClearAllPoints then errors (ADDON_ACTION_BLOCKED)
-		return S:RunOutOfCombat(S.InitAuraButton, S, btn)
+		-- do absolutely nothing inside the secure spawn: even scheduling a
+		-- callback is insecure code in the chain and taints the button. The
+		-- out-of-combat pass below wires it up.
+		return
 	end
 	S:SafeCall("Auras:Init", function()
 		local header = btn:GetParent()
@@ -151,19 +151,9 @@ function S:InitAuraButton(btn)
 		-- button an aura index, the button fills itself right away instead of
 		-- waiting for our next refresh pass - works mid-combat too since the
 		-- header's own update just spawned it
-		btn:SetScript("OnAttributeChanged", function(self2, attr, value)
-			if (attr == "index" or attr == "target-slot") and value then
-				-- defer out of the secure update chain: running insecure code
-				-- inside it taints the header's next ClearAllPoints call ->
-				-- ADDON_ACTION_BLOCKED. One frame later is soon enough and
-				-- keeps the self-fill behavior.
-				local v, a = value, attr
-				C_Timer.After(0, function()
-					if a == "index" then S:SafeCall("Auras:BtnFill", A.UpdateAura, A, self2, v)
-					else S:SafeCall("Auras:BtnFill", A.UpdateWeapon, A, self2, v) end
-				end)
-			end
-		end)
+		-- no OnAttributeChanged hook: insecure code inside the secure
+		-- attribute dispatch taints the header's layout (ClearAllPoints ->
+		-- ADDON_ACTION_BLOCKED). Content is filled by the polling refresh.
 		local db = A.db[btn.filter == "HARMFUL" and "debuffs" or "buffs"]
 		S:CreateBackdrop(btn, "Default")
 		btn.icon = btn:CreateTexture(nil, "ARTWORK")
@@ -223,6 +213,7 @@ function A:ConfigureHeader(header)
 		local child = header:GetAttribute("child" .. i)
 		if not child then break end
 		child:SetSize(size, size)
+		if not child.icon then S:InitAuraButton(child) end
 	end
 	local anchor = header:GetAttribute("point")
 	header:ClearAllPoints()
