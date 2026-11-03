@@ -58,12 +58,15 @@ local function channelAvailable(msg)
 	return IsInGroup()
 end
 
-function AN:PostMessage(msg)
+-- public channels can only be posted from a hardware event on this client
+-- (typed slash command, button click); a timer can never send them
+local PUBLIC = { SAY = true, YELL = true, CHANNEL = true }
+
+function AN:PostMessage(msg, manual)
 	if not msg.text or msg.text == "" then return end
 	if not channelAvailable(msg) then return end
-	-- SendChatMessage is a protected action in combat on this client;
-	-- the ticker just skips the tick instead of tripping ADDON_ACTION_BLOCKED
 	if InCombatLockdown() then return end
+	if PUBLIC[msg.channel] and not manual then return end
 	if msg.channel == "CHANNEL" then
 		local chId = GetChannelName(msg.channelName)
 		if chId > 0 then SendChatMessage(msg.text, "CHANNEL", nil, chId) end
@@ -84,13 +87,19 @@ function AN:StartMessage(msg, immediate)
 	msg.nextPost = GetTime() + msg.interval * 60
 	-- only post right away when the user just toggled it on — resume after a
 	-- reload and interval edits must not re-post the message
-	if immediate then self:PostMessage(msg) end
+	if immediate then self:PostMessage(msg, true) end
 end
 
 function AN:StopMessage(msg)
 	msg.active = false
 	local t = self.timers[msg.id]
 	if t then t:Cancel() self.timers[msg.id] = nil end
+end
+
+function AN:PostNowAll()
+	for _, m in ipairs(messages()) do
+		if m.active then self:PostMessage(m, true) end
+	end
 end
 
 function AN:StopAll()
@@ -438,6 +447,10 @@ function AN:ToggleWindow()
 		self.frame:Show()
 	end
 end
+
+SLASH_SUIANNOUNCE1 = "/suiannounce"
+SLASH_SUIANNOUNCE2 = "/suipost"
+SlashCmdList.SUIANNOUNCE = function() local a = S:GetModule("Announcer") if a and a.PostNowAll then a:PostNowAll() end end
 
 function AN:Initialize()
 	self.db = S.db.profile.announcer or {}
