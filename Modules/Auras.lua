@@ -210,16 +210,10 @@ function A:CreateHeader(kind)
 	S:CreateMover(holder, kind, kind == "buffs" and L["Player Buffs"] or L["Player Debuffs"], pos, "auras")
 	self:ConfigureHeader(header)
 	header:Show()
-	-- the client's SecureAuraHeader event/update scripts run
-	-- SecureAuraHeader_Update even mid-combat, which calls ClearAllPoints on
-	-- the protected aura buttons -> ADDON_ACTION_BLOCKED. Removing the
-	-- template's scripts and events entirely cuts every entry point into that
-	-- path; the module drives updates itself: out of combat the real update
-	-- runs, in combat only the contents of already-mapped buttons refresh
-	-- (new auras get their buttons at regen via the queued full update)
-	header:SetScript("OnEvent", nil)
-	header:SetScript("OnUpdate", nil)
-	header:UnregisterAllEvents()
+	-- the template keeps its own secure update: it can spawn and lay out
+	-- aura buttons even in combat, which is exactly what it was built for.
+	-- The old ADDON_ACTION_BLOCKED came from our insecure attribute hooks in
+	-- the same call chain, which are deferred to after combat now.
 	self[kind] = header
 end
 
