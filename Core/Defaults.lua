@@ -526,7 +526,7 @@ S.defaults = {
 			cooldownTime = 3,
 			reagentWarn = 5,
 			greaterMin = 2,
-			cats = { buffs = true, weapon = true, reagent = true, cooldown = true, rank = true },
+			cats = { buffs = true, weapon = true, reagent = true, cooldown = true, rank = false },
 		},
 		instancetracker = {
 			timeStringType = "medium",

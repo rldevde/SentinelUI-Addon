@@ -132,12 +132,19 @@ end
 -- ---------------------------------------------------------------------------
 -- glow overlay (own color, bounce pulse)
 -- ---------------------------------------------------------------------------
+-- the client's own spell-activation overlay is the pretty animated glow; the
+-- pulsing border below is only a fallback for clients that lack it
+local NativeGlow = _G.ActionButton_ShowOverlayGlow
+local NativeHide = _G.ActionButton_HideOverlayGlow
+
 local function GlowOf(btn)
 	local g = btn.suiFlareGlow
 	if not g then
 		g = CreateFrame("Frame", nil, btn, S.BackdropTemplate)
 		S:SetOutside(g, btn, 2, 2)
-		g:SetBackdrop({ edgeFile = S.media.blank, edgeSize = 2 })
+		-- soft look instead of a hard box: translucent fill plus a thin edge
+		g:SetBackdrop({ bgFile = S.media.blank, edgeFile = S.media.blank, edgeSize = 1 })
+		g:SetBackdropColor(1, 0.72, 0.25, 0.16)
 		g:SetFrameLevel(btn:GetFrameLevel() + 6)
 		local ag = g:CreateAnimationGroup()
 		ag:SetLooping("BOUNCE")
@@ -153,15 +160,33 @@ end
 
 local reasons = {} -- btn -> { [reason] = expiresAt }
 
+local function ShowGlowFrame(btn)
+	if NativeGlow then
+		btn.suiFlareNative = true
+		NativeGlow(btn)
+		return
+	end
+	local c = FL.db and FL.db.color or { 1.0, 0.62, 0.12 }
+	local g = GlowOf(btn)
+	g:SetBackdropBorderColor(c[1], c[2], c[3], (FL.db and FL.db.alpha) or 1)
+	g:SetBackdropColor(c[1], c[2], c[3], 0.14)
+	g:SetAlpha((FL.db and FL.db.alpha) or 1)
+	if not g:IsShown() then g:Show() g.anim:Play() end
+end
+
+local function HideGlowFrame(btn)
+	if btn.suiFlareNative then
+		btn.suiFlareNative = nil
+		if NativeHide then NativeHide(btn) end
+	end
+	if btn.suiFlareGlow then btn.suiFlareGlow.anim:Stop() btn.suiFlareGlow:Hide() end
+end
+
 local function SetGlow(btn, reason, untilT)
 	local r = reasons[btn]
 	if not r then r = {} reasons[btn] = r end
 	r[reason] = untilT or math.huge
-	local c = FL.db and FL.db.color or { 1.0, 0.62, 0.12 }
-	local g = GlowOf(btn)
-	g:SetBackdropBorderColor(c[1], c[2], c[3], (FL.db and FL.db.alpha) or 1)
-	g:SetAlpha((FL.db and FL.db.alpha) or 1)
-	if not g:IsShown() then g:Show() g.anim:Play() end
+	ShowGlowFrame(btn)
 end
 
 local function ClearGlows()
@@ -173,7 +198,7 @@ local function ClearGlows()
 		end
 		if not alive then
 			reasons[btn] = nil
-			if btn.suiFlareGlow then btn.suiFlareGlow.anim:Stop() btn.suiFlareGlow:Hide() end
+			HideGlowFrame(btn)
 		end
 	end
 end

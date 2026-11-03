@@ -61,6 +61,9 @@ end
 function AN:PostMessage(msg)
 	if not msg.text or msg.text == "" then return end
 	if not channelAvailable(msg) then return end
+	-- SendChatMessage is a protected action in combat on this client;
+	-- the ticker just skips the tick instead of tripping ADDON_ACTION_BLOCKED
+	if InCombatLockdown() then return end
 	if msg.channel == "CHANNEL" then
 		local chId = GetChannelName(msg.channelName)
 		if chId > 0 then SendChatMessage(msg.text, "CHANNEL", nil, chId) end
