@@ -142,10 +142,16 @@ function S:InitAuraButton(btn)
 		-- waiting for our next refresh pass - works mid-combat too since the
 		-- header's own update just spawned it
 		btn:SetScript("OnAttributeChanged", function(self2, attr, value)
-			if attr == "index" and value then
-				S:SafeCall("Auras:BtnFill", A.UpdateAura, A, self2, value)
-			elseif attr == "target-slot" and value then
-				S:SafeCall("Auras:BtnFill", A.UpdateWeapon, A, self2, value)
+			if (attr == "index" or attr == "target-slot") and value then
+				-- defer out of the secure update chain: running insecure code
+				-- inside it taints the header's next ClearAllPoints call ->
+				-- ADDON_ACTION_BLOCKED. One frame later is soon enough and
+				-- keeps the self-fill behavior.
+				local v, a = value, attr
+				C_Timer.After(0, function()
+					if a == "index" then S:SafeCall("Auras:BtnFill", A.UpdateAura, A, self2, v)
+					else S:SafeCall("Auras:BtnFill", A.UpdateWeapon, A, self2, v) end
+				end)
 			end
 		end)
 		local db = A.db[btn.filter == "HARMFUL" and "debuffs" or "buffs"]
