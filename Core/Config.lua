@@ -906,6 +906,19 @@ function S:BuildOptions()
 			self.optionPath[k] = { "side_" .. (pageCat[k] or "util"), k }
 		end
 	end
+	-- module-registered pages (Configshare, Decurse, Magebar, Quickannounce
+	-- and the rest) are not in the order list: file them by the same mapping
+	-- so nothing sits flat in the sidebar
+	local KEEP = { search = true, modules = true, profiles = true, general = true, movers = true }
+	for k, g in pairs(root.args) do
+		if type(g) == "table" and g.type == "group" and not KEEP[k] and not k:match("^side_") then
+			local cat = pageCat[k] or "util"
+			catArgs[cat].args[k] = g
+			g.order = (g.order or 0) + 40
+			root.args[k] = nil
+			self.optionPath[k] = { "side_" .. cat, k }
+		end
+	end
 	local unitOrder = { "player", "target", "targettarget", "focus", "focustarget", "pet", "pettarget", "party", "partypet", "raid", "raid40", "maintank", "boss", "arena" }
 	local unitTitles = {
 		player = L["Player"], target = L["Target"], targettarget = L["Target of Target"], focus = L["Focus"], focustarget = L["Focus Target"],
