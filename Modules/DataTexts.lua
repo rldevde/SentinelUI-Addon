@@ -1197,6 +1197,89 @@ local function SlotOnUpdate(slot, elapsed)
 	S:SafeCall("DataTexts:" .. slot.def.name, slot.def.update, slot)
 end
 
+-- Professions: icon dropdown listing your professions; click opens the
+-- profession window, each entry's tooltip shows the skill level.
+local profPopup
+local function ProfRows()
+	local out = {}
+	if GetProfessions and GetProfessionInfo then
+		for i = 1, GetProfessions() do
+			local idx = select(i, GetProfessions())
+			if idx then
+				local name, icon, rank, max = GetProfessionInfo(idx)
+				if name then out[#out + 1] = { name = name, icon = icon, rank = rank or 0, max = max or 0 } end
+			end
+		end
+	end
+	return out
+end
+
+local function ShowProfPopup(slot)
+	if profPopup and profPopup:IsShown() then profPopup:Hide() return end
+	if not profPopup then
+		profPopup = CreateFrame("Frame", "SentinelUIProfPopup", UIParent, "BackdropTemplate")
+		profPopup:SetFrameStrata("TOOLTIP")
+		profPopup:SetClampedToScreen(true)
+		S:CreateBackdrop(profPopup, "Default")
+		profPopup.rows = {}
+	end
+	local list = ProfRows()
+	if #list == 0 then return end
+	for i, info in ipairs(list) do
+		local r = profPopup.rows[i]
+		if not r then
+			r = CreateFrame("Button", nil, profPopup)
+			r:SetSize(160, 22)
+			r.icon = r:CreateTexture(nil, "ARTWORK")
+			r.icon:SetSize(18, 18) r.icon:SetPoint("LEFT", 4, 0)
+			r.fs = S:FontString(r, 11)
+			r.fs:SetPoint("LEFT", r.icon, "RIGHT", 6, 0)
+			r.hl = r:CreateTexture(nil, "HIGHLIGHT")
+			r.hl:SetAllPoints() r.hl:SetColorTexture(1, 1, 1, 0.08)
+			r:SetScript("OnEnter", function()
+				GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
+				GameTooltip:AddLine(r.info.name)
+				GameTooltip:AddDoubleLine(L["Skill"], r.info.rank .. " / " .. r.info.max, 1, 1, 1, 0.7, 0.9, 0.7)
+				GameTooltip:Show()
+			end)
+			r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+			r:SetScript("OnClick", function()
+				if CastSpellByName then CastSpellByName(r.info.name) end
+				profPopup:Hide()
+			end)
+			profPopup.rows[i] = r
+		end
+		r.info = info
+		r.icon:SetTexture(info.icon)
+		r.fs:SetFormattedText("|cffffffff%s|r |cff888888%d/%d|r", info.name, info.rank, info.max)
+		r:SetPoint("TOPLEFT", 4, -4 - (i - 1) * 22)
+		r:Show()
+	end
+	for i = #list + 1, #profPopup.rows do profPopup.rows[i]:Hide() end
+	profPopup:SetSize(170, 8 + #list * 22)
+	profPopup:ClearAllPoints()
+	profPopup:SetPoint("BOTTOM", slot, "TOP", 0, 4)
+	profPopup:Show()
+end
+
+DT:Register("Professions", {
+	interval = 5,
+	update = function(slot)
+		local n = GetProfessions and GetProfessions() or 0
+		slot.text:SetText(Label(L["Professions"]) .. Value(tostring(n)))
+	end,
+	enter = function(slot)
+		local tt = DT:Tooltip(slot)
+		tt:AddLine(L["Professions"], S.accent.r, S.accent.g, S.accent.b)
+		for _, p in ipairs(ProfRows()) do
+			tt:AddDoubleLine(p.name, p.rank .. " / " .. p.max, 1, 1, 1, 0.7, 0.9, 0.7)
+		end
+		tt:AddLine(L["Click for the profession list"], 0.6, 0.6, 0.6)
+		tt:Show()
+	end,
+	click = function(slot) ShowProfPopup(slot) end,
+})
+
 local measureFS -- unconstrained FontString for accurate text-width reads
 local function MeasureText(slot)
 	if not measureFS then measureFS = S:FontString(UIParent) end
