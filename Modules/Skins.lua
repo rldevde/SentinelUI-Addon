@@ -1795,6 +1795,11 @@ function SK:SkinAddOns(addonName)
 			if timer then S:SetFont(timer, S.media.numberFont, 12, "OUTLINE") end
 		end
 		if DBT.CreateBar then hooksecurefunc(DBT, "CreateBar", function(_, ...) C_Timer.After(0, function() if DBT.bars then for bar in pairs(DBT.bars) do S:SafeCall("Skins:BossMod", SkinBar, bar) end end end) end) end
+	elseif addonName == "Questie" then
+		-- tracker pops up at different times; retry a few times after load
+		for _, delay in ipairs({ 1, 4, 10 }) do
+			C_Timer.After(delay, function() S:SafeCall("Skins:Questie", SkinQuestie) end)
+		end
 	elseif addonName == "Details" and db.meter and Details then
 		-- it has its own skin engine; we only align the window background to our colors.
 		C_Timer.After(2, function()
@@ -1807,6 +1812,31 @@ function SK:SkinAddOns(addonName)
 				end
 			end)
 		end)
+	end
+end
+
+local function SkinQuestie()
+	if not S.db.profile.skins or S.db.profile.skins.questie == false then return end
+	-- Questie builds its tracker lazily: skin whatever already exists
+	local function SkinQFrame(name)
+		local f = _G[name]
+		if not f or f.suiWindowSkinned then return end
+		if f.SetBackdrop then f:SetBackdrop(nil) end
+		S:CreateBackdrop(f, "Default")
+		f.suiWindowSkinned = true
+	end
+	for _, n in ipairs({
+		"QuestieTracker", "QuestieTrackerFrame", "QuestieTrackerBaseFrame", "Questie_Tracker",
+		"QuestieJourneyFrame", "QuestieFrame", "QuestieOptionsFrame",
+	}) do SkinQFrame(n) end
+	-- LibDBIcon minimap button to our round style
+	local mb = _G.LibDBIcon10_Questie or _G["QuestieMinimapIcon"]
+	if mb and not mb.suiSkinned then
+		mb.suiSkinned = true
+		if mb.SetNormalTexture then mb:SetNormalTexture(nil) end
+		if mb.SetPushedTexture then mb:SetPushedTexture(nil) end
+		if mb.SetHighlightTexture then mb:SetHighlightTexture("Interface/Buttons/ButtonHilight-Square") end
+		S:CreateBackdrop(mb, "Default")
 	end
 end
 
@@ -1856,7 +1886,7 @@ function SK:Initialize()
 			end
 		end
 	end
-	for _, a in ipairs({ "DBM-Core", "Details" }) do
+	for _, a in ipairs({ "DBM-Core", "Details", "Questie" }) do
 		if S.IsAddOnLoaded(a) then self:SkinAddOns(a) end
 	end
 	self:RegisterEvent("ADDON_LOADED")
