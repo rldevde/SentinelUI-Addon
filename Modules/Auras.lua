@@ -249,7 +249,15 @@ function A:RefreshHeaders(unit)
 		if InCombatLockdown() then
 			self:CombatRefresh(header)
 		else
-			header:SetAttribute("unit", header:GetAttribute("unit") or "player")
+			-- re-set BOTH identity attributes: on some clients SetAttribute with
+			-- an unchanged value does not fire OnAttributeChanged, so cycling
+			-- them through a different value forces the secure spawn/layout
+			-- path to actually re-run and new auras get buttons
+			local u = header:GetAttribute("unit") or "player"
+			local f = header:GetAttribute("filter") or "HELPFUL"
+			header:SetAttribute("unit", "none")
+			header:SetAttribute("unit", u)
+			header:SetAttribute("filter", f)
 			self:CombatRefresh(header)
 		end
 	end
@@ -285,5 +293,6 @@ function A:Initialize()
 	-- initial fill + refresh after zoning/reloads (attribute re-set path is
 	-- safe out of combat; inside combat only contents refresh)
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", function() A:RefreshHeaders() end)
+	self:RegisterEvent("PLAYER_REGEN_ENABLED", function() A:RefreshHeaders() end)
 	self:RefreshHeaders()
 end
