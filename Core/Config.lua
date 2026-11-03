@@ -853,6 +853,59 @@ function S:BuildOptions()
 			root.args[k].childGroups = "tab"
 		end
 	end
+
+	-- nest the option pages under sidebar categories (same grouping as the
+	-- module toggles / minimap hubs) so the tree stays readable
+	local sideCats = {
+		{ id = "ui", name = "|TInterface/Icons/INV_Misc_Gear_01:14:14|t " .. L["Interface"], order = 10 },
+		{ id = "chat", name = "|TInterface/Icons/INV_Misc_Note_02:14:14|t " .. L["Chat & Social"], order = 11 },
+		{ id = "raid", name = "|TInterface/Icons/INV_Helmet_08:14:14|t " .. L["Raid & Dungeons"], order = 12 },
+		{ id = "combat", name = "|TInterface/Icons/INV_Sword_04:14:14|t " .. L["Combat & Class"], order = 13 },
+		{ id = "world", name = "|TInterface/Icons/INV_Misc_Map_01:14:14|t " .. L["World & Quest"], order = 14 },
+		{ id = "loot", name = "|TInterface/Icons/INV_Misc_Coin_01:14:14|t " .. L["Auction & Loot"], order = 15 },
+		{ id = "util", name = "|TInterface/Icons/INV_Misc_Note_01:14:14|t " .. L["Utility"], order = 16 },
+	}
+	local pageCat = {
+		actionbars = "ui", unitframes = "ui", nameplates = "ui", auras = "ui", tooltip = "ui", bags = "ui",
+		datatexts = "ui", databars = "ui", minimap = "ui", skins = "ui", cursorring = "ui", buttonbars = "ui",
+		chat = "chat", groupbulletin = "chat", spamfilter = "chat", keywordinvite = "chat",
+		rezannouncer = "chat", enemycastannounce = "chat",
+		damagemeter = "raid", raidcd = "raid", instancetracker = "raid", worldbuffs = "raid",
+		raidcheck = "raid", raidgrid = "raid", bosswatch = "raid", pulltimer = "raid", raidmarker = "raid",
+		enemyradar = "raid", trinkettracker = "raid", bgtools = "raid", lfgenhance = "raid", speedrun = "raid",
+		dottracker = "combat", interruptalert = "combat", interrupttracker = "combat", healerprot = "combat",
+		blessings = "combat", flare = "combat", totemforge = "combat", manatick = "combat", swingtimer = "combat",
+		executealert = "combat", rangedisplay = "combat", pethappiness = "combat", cooldowntracker = "combat",
+		diminishing = "combat", potionreminder = "combat", combatlog = "combat", procalert = "combat",
+		weaponbuff = "combat", fearward = "combat", selfbuffs = "combat", huntertools = "combat",
+		ccbreak = "combat", tauntresist = "combat", aggroalert = "combat", threatmeter = "combat",
+		purgealert = "combat", soulstonetracker = "combat", targetcounter = "combat", bopwarn = "combat",
+		banishtimer = "combat", externalbuffs = "combat", clickcast = "combat", aurawatcher = "combat",
+		waypoints = "world", worldmap = "world", gathernotes = "world", zeptimer = "world", mapinfo = "world",
+		flighttimer = "world", fishinghelper = "world", weaponskill = "world", spellsearch = "world",
+		questitems = "world", notes = "world",
+		itemsync = "loot", lootbrowser = "loot", loothistory = "loot", lootfilter = "loot",
+		pricehistory = "loot", auctionhouse = "loot", disenchant = "loot", craftqueue = "loot",
+		mailgetall = "loot", counters = "loot", profcds = "loot",
+		bugfolder = "util", bisguide = "util", screenshots = "util", summonhelper = "util",
+		timermodule = "util", autoaccept = "util", fastloot = "util", deathrecap = "util",
+		altroster = "util", rankreminder = "util", sessionstats = "util", foodreminder = "util",
+	}
+	local catArgs = {}
+	self.optionPath = {}
+	for _, c in ipairs(sideCats) do
+		catArgs[c.id] = { type = "group", name = c.name, order = c.order, inline = false, childGroups = "tree", args = {} }
+		root.args["side_" .. c.id] = catArgs[c.id]
+	end
+	for i, k in ipairs(order) do
+		local g = root.args[k]
+		if g then
+			local cat = catArgs[pageCat[k] or "util"]
+			root.args[k] = nil
+			cat.args[k] = g
+			self.optionPath[k] = { "side_" .. (pageCat[k] or "util"), k }
+		end
+	end
 	local unitOrder = { "player", "target", "targettarget", "focus", "focustarget", "pet", "pettarget", "party", "partypet", "raid", "raid40", "maintank", "boss", "arena" }
 	local unitTitles = {
 		player = L["Player"], target = L["Target"], targettarget = L["Target of Target"], focus = L["Focus"], focustarget = L["Focus Target"],
@@ -1244,8 +1297,18 @@ function S:ToggleConfig(section)
 	end
 	ACD:Open("SentinelUI")
 	if section then
-		if type(section) == "table" then
-			ACD:SelectGroup("SentinelUI", unpack(section))
+		local path = type(section) == "string" and self.optionPath and self.optionPath[section]
+		if path then
+			ACD:SelectGroup("SentinelUI", unpack(path))
+		elseif type(section) == "table" then
+			-- deep paths that start at a page key get their category prepended
+			if self.optionPath and self.optionPath[section[1]] then
+				local full = { unpack(self.optionPath[section[1]]) }
+				for i = 2, #section do full[#full + 1] = section[i] end
+				ACD:SelectGroup("SentinelUI", unpack(full))
+			else
+				ACD:SelectGroup("SentinelUI", unpack(section))
+			end
 		else
 			ACD:SelectGroup("SentinelUI", section)
 		end
