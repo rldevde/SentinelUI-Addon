@@ -390,7 +390,12 @@ local function PrivateToggle(module, key, label, order)
 		type = "toggle", name = label, order = order, width = "full",
 		get = function() local t = S.private[module] if t == nil then return true end return t[key] end,
 		set = function(_, v)
-			S.private[module] = S.private[module] or {}
+			-- clone instead of writing into the shared default table: when the
+			-- char DB never stored this module, S.private[module] is the
+			-- DEFAULTS table and writes to it don't persist
+			local t = S.private[module]
+			S.private[module] = {}
+			if type(t) == "table" then for k, val in pairs(t) do S.private[module][k] = val end end
 			S.private[module][key] = v
 			if module == "nameplates" and key == "enable" then S.private.nameplates.userSet = true end
 			S:StaticReload()
