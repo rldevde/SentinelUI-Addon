@@ -409,5 +409,25 @@ function A:Initialize()
 	-- safe out of combat; inside combat only contents refresh)
 	self:RegisterEvent("PLAYER_ENTERING_WORLD", function() A:RefreshHeaders() end)
 	self:RegisterEvent("PLAYER_REGEN_ENABLED", function() A:RefreshHeaders() end)
+
+	SLASH_SUIAURAT1 = "/suiauras"
+	SlashCmdList.SUIAURAT = function()
+		local h = A.buffs
+		if not h then print("no header") return end
+		local want = 0
+		for i = 1, 40 do if not S.GetAura("player", i, "HELPFUL") then break end want = want + 1 end
+		local spawned = 0
+		for _, c in ipairs({ h:GetChildren() }) do
+			if c.GetAttribute and c:GetAttribute("index") then spawned = spawned + 1 end
+		end
+		local ov, ovShown = 0, 0
+		for _, o in ipairs(h.suiOverlays or {}) do
+			ov = ov + 1
+			if o:IsShown() then ovShown = ovShown + 1 end
+		end
+		print("|cff88ccffAuras:|r combat=" .. tostring(InCombatLockdown()),
+			"live=" .. want, "buttons=" .. spawned,
+			"overlays=" .. ovShown .. "/" .. ov)
+	end
 	self:RefreshHeaders()
 end
