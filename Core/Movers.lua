@@ -406,6 +406,16 @@ end
 
 function S:RefreshMovers()
 	for _, mover in ipairs(self.moverOrder) do self:PositionMover(mover) end
+	-- restack by area: the smallest mover gets the highest level so a large
+	-- overlay can never swallow the click meant for a mover underneath it
+	local byArea = {}
+	for _, mover in ipairs(self.moverOrder) do byArea[#byArea + 1] = mover end
+	table.sort(byArea, function(a, b)
+		local aw, ah = a:GetSize()
+		local bw, bh = b:GetSize()
+		return (aw * ah) > (bw * bh)
+	end)
+	for i, mover in ipairs(byArea) do mover:SetFrameLevel(100 + i) end
 end
 
 local function DrawGrid(size)

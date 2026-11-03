@@ -226,7 +226,8 @@ function S:ChatCommand(input)
 		local tr = self:GetModule("Trainer")
 		if tr and tr.Open then tr:Open(false) end
 	elseif cmd == "resets" or cmd == "raidreset" or cmd == "instances" then
-		local rr = self:GetModule("RaidReset")
+		local it = self:GetModule("InstanceTracker")
+		local rr = it and it.RaidReset
 		if rr and rr.Toggle then rr:Toggle() end
 	elseif cmd == "rep" or cmd == "reputation" then
 		local rp = self:GetModule("Reputation")

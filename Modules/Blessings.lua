@@ -1092,7 +1092,8 @@ function PB:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "blessings", glyph = "SG",
+		name = "blessings",
+		hub = "raidtools", label = S.L["Blessings"], order = 5, classes = { PALADIN = true }, glyph = "SG",
 		store = self.private.minimap, angle = 270,
 		onLeft = function() PB.db.showBar = not PB.db.showBar PB:RefreshFrames() end,
 		onRight = function() PB:ToggleGrid() end,

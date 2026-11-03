@@ -19,6 +19,7 @@ function addon:CreateMinimapButton()
 
 	self.minimapButton = S:CreateMinimapButton({
 		name = "BetterItem",
+		hub = "character", label = S.L["BetterItem"], order = 2,
 		glyph = "BI",
 		store = d,
 		angle = -45,

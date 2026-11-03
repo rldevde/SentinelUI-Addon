@@ -2240,7 +2240,8 @@ function GH:UpdateMinimap()
 		self.private = self.private or {}
 		self.private.ghMinimap = self.private.ghMinimap or {}
 		self.minimapBtn = S:CreateMinimapButton({
-			name = "guildhub", glyph = "GH",
+			name = "guildhub",
+		hub = "social", label = S.L["Guild Chronicle"], order = 1, glyph = "GH",
 			store = self.private.ghMinimap, angle = 250,
 			onLeft = function() GH:Toggle() end,
 			onRight = function() GH:Toggle() GH:SelectTab("manager") end,

@@ -391,7 +391,8 @@ function DC:UpdateMinimap()
 	end
 	if not self.minimapBtn then
 		self.minimapBtn = S:CreateMinimapButton({
-			name = "decurse", glyph = "DC", store = d, angle = -55,
+			name = "decurse",
+		hub = "raidtools", label = S.L["Decurse"], order = 4, classes = { DRUID = true, MAGE = true, PRIEST = true, PALADIN = true, SHAMAN = true }, glyph = "DC", store = d, angle = -55,
 			onLeft = function()
 				local f = DC.frame
 				if not f then return end

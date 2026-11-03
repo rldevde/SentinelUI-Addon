@@ -76,10 +76,10 @@ Modules\Trainer\Data\WarlockTomes.lua
 Modules\Trainer\Data\Warrior.lua
 Modules\RaidReset\InstanceData.lua
 Modules\RaidReset\QuestData.lua
-Modules\RaidReset.lua
 Modules\InstanceTracker\Data.lua
 Modules\InstanceTracker.lua
 Modules\InstanceTracker\UI.lua
+Modules\RaidReset.lua
 Modules\WorldBuffs\Data.lua
 Modules\WorldBuffs.lua
 Modules\WorldBuffs\UI.lua
@@ -110,6 +110,14 @@ Modules\BisGuide\Data_Talents.lua
 Modules\BisGuide\Data_Misc.lua
 Modules\BisGuide.lua
 Modules\BisGuide\Extras.lua
+Modules\BisGuide\Pool.lua
+Modules\BisGuide\Pool_CLASSIC.lua
+Modules\BisGuide\Pool_SOD.lua
+Modules\BisGuide\Pool_WRATH.lua
+Modules\BisGuide\Pool_CATA.lua
+Modules\BisGuide\Pool_MISTS.lua
+Modules\BisGuide\Pool_RETAIL.lua
+Modules\BisGuide\PoolUI.lua
 Modules\LootData\Data_Locales.lua
 Modules\LootData\Data_Drops.lua
 Modules\LootData\Data_VANILLA.lua

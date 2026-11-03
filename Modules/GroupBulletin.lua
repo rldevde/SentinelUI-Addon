@@ -229,7 +229,8 @@ function GB:UpdateMinimap()
 		self.private = self.private or {}
 		self.private.minimap = self.private.minimap or {}
 		self.minimapBtn = S:CreateMinimapButton({
-			name = "groupbulletin", glyph = "GF", store = self.private.minimap,
+			name = "groupbulletin",
+		hub = "instances", label = S.L["Group Finder"], order = 5, glyph = "GF", store = self.private.minimap,
 			onLeft = function() GB:Toggle() end,
 			tooltip = function()
 				GameTooltip:AddLine("SentinelUI " .. (L["Group Bulletin"] or ""), S.accent.r, S.accent.g, S.accent.b)

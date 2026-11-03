@@ -985,7 +985,8 @@ function LB:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "lootbrowser", glyph = "LB",
+		name = "lootbrowser",
+		hub = "instances", label = S.L["Loot Browser"], order = 4, glyph = "LB",
 		store = self.private.minimap, angle = 84,
 		onLeft = function() LB:ToggleBrowser() end,
 		onRight = function() S:ToggleConfig("lootbrowser") end,

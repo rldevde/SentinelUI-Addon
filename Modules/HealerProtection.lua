@@ -80,7 +80,8 @@ function HP:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "healerprot", glyph = "HP",
+		name = "healerprot",
+		hub = "raidtools", label = S.L["Healer Protection"], order = 6, classes = { PRIEST = true, DRUID = true, SHAMAN = true, PALADIN = true }, glyph = "HP",
 		store = self.private.minimap, angle = 250,
 		onLeft = function() S:ToggleConfig("healerprot") end,
 		onRight = function() HP.db.enable = not HP.db.enable S:Print(HP.db.enable and L["Healer Protection: on"] or L["Healer Protection: off"]) end,

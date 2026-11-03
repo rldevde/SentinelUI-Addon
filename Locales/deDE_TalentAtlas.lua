@@ -771,3 +771,50 @@ L["+282 attack power (Warlock: +143 spell damage)"] = "+282 Angriffskraft (Hexen
 L["Crusader"] = "Kreuzfahrer"
 L["Engineering (bombs"] = "Ingenieurskunst (Bomben"
 L["parry and block"] = "Parieren und Blocken"
+
+-- client-dependent content
+L["Class and race details describe The Burning Crusade and can differ on your client. Your own talents are read live."] = "Klassen- und Volksdetails beschreiben The Burning Crusade und können auf deinem Client abweichen. Deine eigenen Talente werden live ausgelesen."
+L["Blood"] = "Blut"
+L["Unholy"] = "Unheilig"
+L["Brewmaster"] = "Braumeister"
+L["Mistweaver"] = "Nebelwirker"
+L["Windwalker"] = "Windläufer"
+L["Havoc"] = "Verwüstung"
+L["Vengeance"] = "Rachsucht"
+L["Devastation"] = "Verheerung"
+L["Preservation"] = "Bewahrung"
+L["Augmentation"] = "Verstärkung"
+
+-- BiS pools
+local function T(k, v) if rawget(L, k) == nil then L[k] = v end end
+T("BiS Overall", "BiS gesamt")
+T("BiS in Raid", "BiS im Schlachtzug")
+T("BiS in M+", "BiS in M+")
+T("BiS in M+/Raid", "BiS in M+/Schlachtzug")
+T("Trinkets", "Schmuckstücke")
+T("Pre-BiS", "Vor-BiS")
+T("Phase %s", "Phase %s")
+T("SoD phase %s", "SoD-Phase %s")
+T("Catalyst", "Katalysator")
+T("Left click: next  |  Right click: previous", "Linksklick: weiter  |  Rechtsklick: zurück")
+T("Class", "Klasse")
+T("Spec", "Spezialisierung")
+T("Phase", "Phase")
+T("Other", "Sonstiges")
+T("items", "Gegenstände")
+T("Data from", "Datenstand")
+T("Feral", "Wilder Kampf")
+T("Guardian", "Wächter")
+T("Outlaw", "Gesetzlosigkeit")
+T("Devourer", "Verschlinger")
+
+-- minimap hubs
+local function T(k, v) if rawget(L, k) == nil then L[k] = v end end
+T("Dungeons & Raids", "Dungeons & Schlachtzüge")
+T("Raid Tools", "Schlachtzug-Werkzeuge")
+T("Character & Guides", "Charakter & Guides")
+T("Guild & Chat", "Gilde & Chat")
+T("Click: open the menu", "Klick: Menü öffnen")
+T("War Logs", "Kampflogs")
+T("Alt Roster", "Twink-Liste")
+T("Profession Cooldowns", "Berufs-Abklingzeiten")

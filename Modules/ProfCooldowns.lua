@@ -207,7 +207,8 @@ function PC:UpdateMinimap()
 		self.private = self.private or {}
 		self.private.minimap = self.private.minimap or {}
 		self.minimapBtn = S:CreateMinimapButton({
-			name = "profcds", glyph = "PC", store = self.private.minimap,
+			name = "profcds",
+		hub = "character", label = S.L["Profession Cooldowns"], order = 3, glyph = "PC", store = self.private.minimap,
 			onLeft = function() PC:Toggle() end,
 			tooltip = function(b)
 				GameTooltip:AddLine("SentinelUI " .. (L["Profession Cooldowns"] or "Profession Cooldowns"), S.accent.r, S.accent.g, S.accent.b)

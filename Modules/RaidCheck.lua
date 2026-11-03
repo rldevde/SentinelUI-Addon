@@ -705,7 +705,8 @@ function RC:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "raidcheck", glyph = "RC",
+		name = "raidcheck",
+		hub = "raidtools", label = S.L["Raid Check"], order = 2, glyph = "RC",
 		store = self.private.minimap, angle = 300,
 		onLeft = function() RC:Toggle() end,
 		onRight = function() RC:Toggle() if RC.frame and RC.frame:IsShown() then RC:Refresh() end end,

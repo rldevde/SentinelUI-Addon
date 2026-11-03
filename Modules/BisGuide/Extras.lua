@@ -2,7 +2,7 @@
 local _, ns = ...
 local S = ns.S
 local L = S.L
-local BG = S:GetModule("BisGuide")
+local BG = S:GetModule("TalentAtlas").BisGuide
 
 local _G = _G
 local ipairs, pairs, tinsert = ipairs, pairs, table.insert

@@ -426,6 +426,7 @@ function SL:UpdateMinimap()
 		self.private.seelastMinimap = self.private.seelastMinimap or {}
 		self.minimapBtn = S:CreateMinimapButton({
 			name = "SeeLast",
+		hub = "social", label = S.L["SeeLast"], order = 3,
 			glyph = "SL",
 			store = self.private.seelastMinimap,
 			angle = 285,

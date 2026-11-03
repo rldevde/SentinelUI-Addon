@@ -342,7 +342,7 @@ local NOHEAL = { [5487] = true, [9634] = true, [1066] = true, [768] = true,
 	[783] = true, [15473] = true, [2645] = true }
 local unshift = ""
 local cancel = {}
-for i = 1, (GetNumShapeshiftForms and GetNumShapeshiftForms() or 0) do
+for i = 1, tonumber(GetNumShapeshiftForms and GetNumShapeshiftForms()) or 0 do
 	local _, _, _, sid = GetShapeshiftFormInfo(i)
 	if sid and NOHEAL[sid] then cancel[#cancel + 1] = i end
 end
@@ -2075,7 +2075,8 @@ function RG:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "raidgrid", glyph = "HG",
+		name = "raidgrid",
+		hub = "raidtools", label = S.L["Heal Grid"], order = 1, glyph = "HG",
 		store = self.private.minimap, angle = 330,
 		onLeft = function() RG:Toggle() end,
 		onRight = function() RG:ToggleConfig() end,

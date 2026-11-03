@@ -92,7 +92,8 @@ function AR:Initialize()
 	S.private.altroster = S.private.altroster or {}
 	S.private.altroster.minimap = S.private.altroster.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "altroster", glyph = "AR", store = S.private.altroster.minimap,
+		name = "altroster",
+		hub = "character", label = S.L["Alt Roster"], order = 5, glyph = "AR", store = S.private.altroster.minimap,
 		onLeft = function() AR:Toggle() end,
 		tooltip = function(b)
 			GameTooltip:AddLine("SentinelUI " .. L["Characters"], S.accent.r, S.accent.g, S.accent.b)

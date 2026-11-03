@@ -5,8 +5,54 @@
 -- weapon table (read from the game's skill data), Wowhead and
 -- classicwow.gg stat-cap tools, wowcalc.net class stat pages.
 local _, ns = ...
+local S = ns.S
 local TD = {}
 ns.TalentAtlasData = TD
+
+-- expansion index of the running client, read from the interface version so
+-- every client (Era, TBC, Wrath, Cata, Mists, Retail and the Forever client)
+-- is placed correctly: only content whose "since" is not newer is shown
+local function ClientIndex()
+	local interface = tonumber((select(4, GetBuildInfo()))) or 0
+	-- World of Warcraft: Forever (interface 16xxx) is a progression game: its
+	-- current expansion decides the content, read from the client itself
+	if interface >= 16000 and interface < 17000 then
+		local lvl = (GetClampedCurrentExpansionLevel and GetClampedCurrentExpansionLevel())
+			or (GetExpansionLevel and GetExpansionLevel()) or 0
+		return math.max(1, math.min(12, (tonumber(lvl) or 0) + 1))
+	end
+	for _, step in ipairs({ { 120000, 12 }, { 110000, 11 }, { 100000, 10 }, { 90000, 9 }, { 80000, 8 },
+		{ 70000, 7 }, { 60000, 6 }, { 50500, 5 }, { 40400, 4 }, { 30400, 3 }, { 20500, 2 } }) do
+		if interface >= step[1] then return step[2] end
+	end
+	return 1
+end
+TD.clientIndex = ClientIndex()
+-- class/race/caps/talent/BiS values in this file were written for The Burning
+-- Crusade (Era shares them); newer clients get only version-independent
+-- pages and live talent data instead of wrong TBC numbers
+TD.verified = TD.clientIndex <= 2
+TD.bisClient = TD.clientIndex == 2
+
+-- classes that exist on this client AND have guide/spec data; classes without
+-- a specs table stay hidden until their data is written
+function TD.ClassList()
+	local out = {}
+	for _, file in ipairs(TD.classOrder) do
+		local c = TD.classes[file]
+		if c and (c.since or 1) <= TD.clientIndex and c.specs then out[#out + 1] = file end
+	end
+	return out
+end
+
+-- races that exist on this client
+function TD.RaceList()
+	local out = {}
+	for _, r in ipairs(TD.races or {}) do
+		if (r.since or 1) <= TD.clientIndex then out[#out + 1] = r end
+	end
+	return out
+end
 
 TD.expansions = {
 	[1] = "Classic", [2] = "The Burning Crusade", [3] = "Wrath of the Lich King", [4] = "Cataclysm",
@@ -245,13 +291,36 @@ TD.classes = {
 	},
 	-- later expansions: overview only
 	DEATHKNIGHT = { since = 3, name = "Death Knight", resource = "Runes, Runic Power", roles = "Tank, Melee DPS", armor = { "Plate" },
-		overview = "Rune-powered melee fighter combining heavy armor, diseases and dark magic." },
+		overview = "Rune-powered melee fighter combining heavy armor, diseases and dark magic.",
+		weapons = {}, reagents = {}, utility = {},
+		specs = {
+			spec("Blood", "TANK", "Strength", { "Strength", "Stamina" }, ""),
+			spec("Frost", "DPS", "Strength", { "Strength" }, ""),
+			spec("Unholy", "DPS", "Strength", { "Strength" }, ""),
+		} },
 	MONK = { since = 5, name = "Monk", resource = "Energy, Mana, Chi", roles = "Tank, Healer, Melee DPS", armor = { "Leather" },
-		overview = "Mobile martial artist with distinct tanking, healing and damage specializations." },
+		overview = "Mobile martial artist with distinct tanking, healing and damage specializations.",
+		weapons = {}, reagents = {}, utility = {},
+		specs = {
+			spec("Brewmaster", "TANK", "Agility", { "Agility", "Stamina" }, ""),
+			spec("Mistweaver", "HEALER", "Intellect", { "Intellect" }, ""),
+			spec("Windwalker", "DPS", "Agility", { "Agility" }, ""),
+		} },
 	DEMONHUNTER = { since = 7, name = "Demon Hunter", resource = "Fury, Pain", roles = "Tank, Melee DPS", armor = { "Leather" },
-		overview = "Highly mobile fel-powered fighter specializing in aggressive damage or active tanking." },
+		overview = "Highly mobile fel-powered fighter specializing in aggressive damage or active tanking.",
+		weapons = {}, reagents = {}, utility = {},
+		specs = {
+			spec("Havoc", "DPS", "Agility", { "Agility" }, ""),
+			spec("Vengeance", "TANK", "Agility", { "Agility", "Stamina" }, ""),
+		} },
 	EVOKER = { since = 10, name = "Evoker", resource = "Mana, Essence", roles = "Ranged DPS, Healer, Support", armor = { "Mail" },
-		overview = "Dracthyr spellcaster with empowered abilities, mid-range magic, healing and support." },
+		overview = "Dracthyr spellcaster with empowered abilities, mid-range magic, healing and support.",
+		weapons = {}, reagents = {}, utility = {},
+		specs = {
+			spec("Devastation", "DPS", "Intellect", { "Intellect" }, ""),
+			spec("Preservation", "HEALER", "Intellect", { "Intellect" }, ""),
+			spec("Augmentation", "DPS", "Intellect", { "Intellect" }, ""),
+		} },
 }
 
 -- races: {key, name, faction, since, zone, classes, racials{ {name, desc [, only]} }}

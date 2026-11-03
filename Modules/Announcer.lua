@@ -444,7 +444,8 @@ function AN:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "announcer", glyph = "AN",
+		name = "announcer",
+		hub = "social", label = S.L["Announcer"], order = 2, glyph = "AN",
 		store = self.private.minimap, angle = 200,
 		onLeft = function() AN:ToggleWindow() end,
 		onRight = function() AN:StopAll() S:Print(L["Stop All"]) end,

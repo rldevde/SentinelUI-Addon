@@ -828,7 +828,7 @@ function IT:RecordLockouts()
 	char.savedInstances = wipe(char.savedInstances or {})
 	if not GetNumSavedInstances or not GetSavedInstanceInfo then return end
 	local now = GetServerTime()
-	for i = 1, GetNumSavedInstances() or 0 do
+	for i = 1, tonumber(GetNumSavedInstances()) or 0 do
 		local name, id, reset, _, locked, _, _, _, _, diffName = GetSavedInstanceInfo(i)
 		if name and locked then
 			char.savedInstances[id or i] = {
@@ -1308,6 +1308,7 @@ function IT:SetupMinimapButton()
 	self.db.minimapStore = store
 	self.minimapBtn = S:CreateMinimapButton({
 		name = "instancetracker",
+		hub = "instances", label = S.L["Instance Tracker"], order = 1,
 		glyph = "IT",
 		store = store, angle = 200,
 		onLeft = function() IT:Toggle() end,
@@ -1396,5 +1397,31 @@ function IT:Update()
 	end
 	if self.layerFrame then
 		self.layerFrame:SetShown(self.db.layerFrame == true)
+	end
+end
+
+-- the instance resets and the raid logs are parts of this module: they
+-- start and update together with it
+local PARTS = { "RaidReset", "WarLogs" }
+local baseInitialize, baseUpdate = IT.Initialize, IT.Update
+
+function IT:Initialize()
+	if baseInitialize then baseInitialize(self) end
+	for _, key in ipairs(PARTS) do
+		local part = self[key]
+		if part and part.Initialize and rawget(part, "initialized") ~= true then
+			S:SafeCall("InstanceTracker:" .. key, part.Initialize, part)
+			part.initialized = true
+		end
+	end
+end
+
+function IT:Update()
+	if baseUpdate then baseUpdate(self) end
+	for _, key in ipairs(PARTS) do
+		local part = self[key]
+		if part and rawget(part, "initialized") == true and part.Update then
+			S:SafeCall("InstanceTracker:" .. key .. ":Update", part.Update, part)
+		end
 	end
 end

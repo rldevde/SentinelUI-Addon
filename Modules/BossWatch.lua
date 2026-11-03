@@ -814,7 +814,8 @@ function BW:Initialize()
 	self.private = self.private or {}
 	self.private.minimap = self.private.minimap or {}
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "bosswatch", glyph = "BW",
+		name = "bosswatch",
+		hub = "raidtools", label = S.L["Boss Watch"], order = 3, glyph = "BW",
 		store = self.private.minimap, angle = 335,
 		onLeft = function() BW:ToggleSettings() end,
 		onRight = function() BW:ToggleRules() end,

@@ -6,7 +6,12 @@
 local _, ns = ...
 local S = ns.S
 local L = S.L
-local BG = S:NewModule("BisGuide", "bisguide")
+-- part of the TalentAtlas module since 1.5.2: the BiS guide keeps its own
+-- settings table (profile.bisguide) but shares the module, enable flag and
+-- minimap launcher with TalentAtlas
+local TA = S:GetModule("TalentAtlas")
+local BG = setmetatable({ name = "BisGuide", dbKey = "bisguide" }, getmetatable(TA))
+TA.BisGuide = BG
 
 local _G = _G
 local ipairs, pairs, wipe, tinsert = ipairs, pairs, wipe, table.insert
@@ -914,6 +919,11 @@ function BG:ChatCommand(arg)
 end
 
 function BG:Initialize()
+	self.db = S.db.profile.bisguide
+	local TDx = ns.TalentAtlasData
+	if TDx and not TDx.bisClient then return end -- BiS data is TBC-only
+	if S.private.bisguide and S.private.bisguide.enable == false then return end
+	self.initialized = true
 	D = SUIBisData
 	if not (D and D.bis) then
 		S:Debug("BisGuide: SUIBisData missing")
@@ -966,21 +976,6 @@ function BG:Initialize()
 	SLASH_SUIBIS2 = "/bisguide"
 	SlashCmdList["SUIBIS"] = function(a) S:SafeCall("BisGuide:Cmd", BG.ChatCommand, BG, a) end
 
-	-- minimap launcher (SentinelUI monogram family)
-	self.private = self.private or {}
-	self.private.minimap = self.private.minimap or {}
-	self.minimapBtn = S:CreateMinimapButton({
-		name = "bisguide", glyph = "BG",
-		store = self.private.minimap, angle = 60,
-		onLeft = function()
-			if B and B:IsShown() then B:Hide() else BG:OpenBrowser() end
-		end,
-		onRight = function() S:ToggleConfig("bisguide") end,
-		tooltip = function()
-			GameTooltip:AddLine("SentinelUI " .. (L["BiS Guide"] or "BiS Guide"))
-			GameTooltip:AddLine(L["Left-click: browser  |  Right-click: options  |  Drag: move"], 1, 1, 1)
-		end,
-	})
 end
 
 function BG:Update()

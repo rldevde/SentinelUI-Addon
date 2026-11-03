@@ -285,7 +285,8 @@ function REP:UpdateMinimap()
 	end
 	if not self.minimapBtn then
 		self.minimapBtn = S:CreateMinimapButton({
-			name = "rep", glyph = "RE", store = d, angle = -95,
+			name = "rep",
+		hub = "character", label = S.L["Reputation"], order = 4, glyph = "RE", store = d, angle = -95,
 			onLeft = function() REP:Toggle() end,
 			tooltip = function()
 				GameTooltip:AddLine("SentinelUI " .. L["Reputation"])

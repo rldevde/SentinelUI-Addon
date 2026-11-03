@@ -6,7 +6,11 @@
 local _, ns = ...
 local S = ns.S
 local L = S.L
-local WL = S:NewModule("WarLogs", "warlogs")
+-- part of the InstanceTracker module since 1.5.2: keeps its own settings
+-- table but shares the module, the enable flag and the minimap hub with it
+local IT = S:GetModule("InstanceTracker")
+local WL = setmetatable({ name = "WarLogs", dbKey = "warlogs" }, getmetatable(IT))
+IT.WarLogs = WL
 
 local CreateFrame = CreateFrame
 local GetTime, date = GetTime, date
@@ -540,7 +544,8 @@ function WL:Initialize()
 	self:RegisterEvent("ZONE_CHANGED_NEW_AREA", "ZoneChange")
 	if self.private then self.private.minimap = self.private.minimap or {} end
 	self.minimapBtn = S:CreateMinimapButton({
-		name = "warlogs", glyph = "WL",
+		name = "warlogs",
+		hub = "instances", label = S.L["War Logs"], order = 3, glyph = "WL",
 		store = (self.private and self.private.minimap) or nil,
 		onLeft = function() WL:Toggle() end,
 		tooltip = function()

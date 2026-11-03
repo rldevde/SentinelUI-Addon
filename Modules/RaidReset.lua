@@ -6,7 +6,12 @@
 local _, ns = ...
 local S = ns.S
 local L = S.L
-local RR = S:NewModule("RaidReset")
+-- part of the InstanceTracker module since 1.5.2: keeps its own settings
+-- table but shares the module, the enable flag and the minimap hub with it
+-- (it only gets the base module methods, nothing of the parent's state)
+local IT = S:GetModule("InstanceTracker")
+local RR = setmetatable({ name = "RaidReset", dbKey = "raidreset" }, getmetatable(IT))
+IT.RaidReset = RR
 
 local InstanceData = ns.RDResetInstanceData
 local QuestData = ns.RDResetQuestData
@@ -672,7 +677,8 @@ function RR:UpdateMinimap()
 	end
 	if not self.minimapBtn then
 		self.minimapBtn = S:CreateMinimapButton({
-			name = "raidreset", glyph = "RR", store = d.minimap, angle = -137,
+			name = "raidreset",
+		hub = "instances", label = S.L["Instance Resets"], order = 2, glyph = "RR", store = d.minimap, angle = -137,
 			onLeft = function() RR:Toggle() end,
 			tooltip = function()
 				GameTooltip:AddLine("SentinelUI " .. L["Instance Resets"])

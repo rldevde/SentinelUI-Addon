@@ -206,7 +206,7 @@ function S:LayoutMinimapButtons()
 	end
 end
 
-function S:CreateMinimapButton(opts)
+function S:CreateRimButton(opts)
 	-- modules may call this more than once (re-init, option toggles): reuse the
 	-- existing frame, refresh its handlers and never stack a second icon
 	local existing = self.minimapButtons[opts.name] or _G["SentinelUIMinimapButton_" .. opts.name]
@@ -304,6 +304,164 @@ function S:CreateMinimapButton(opts)
 	return btn
 end
 
+-- Minimap hubs: modules that belong together share ONE rim button. A module
+-- passes `hub = "<name>"` (plus `label`, optional `order`/`classes`) to
+-- S:CreateMinimapButton instead of getting a button of its own; the hub button
+-- opens a small menu with every available entry (left click = the entry's
+-- action, right click = its options). Hubs without a visible entry hide
+-- themselves, class-bound entries only show for their classes.
+S.minimapHubs = S.minimapHubs or {}
+local HUB_DEFS = {
+	instances = { glyph = "IN", title = "Dungeons & Raids", angle = 150 },
+	raidtools = { glyph = "RT", title = "Raid Tools", angle = 175 },
+	character = { glyph = "CH", title = "Character & Guides", angle = 100 },
+	social = { glyph = "SO", title = "Guild & Chat", angle = 70 },
+}
+local hubMenu
+
+local function HubEntries(h)
+	local _, myClass = UnitClass("player")
+	local out = {}
+	for _, e in ipairs(h.entries) do
+		local c = e.opts.classes
+		if not e.hidden and (not c or c[myClass]) then out[#out + 1] = e end
+	end
+	sort(out, function(a, b)
+		local oa, ob = a.opts.order or 50, b.opts.order or 50
+		if oa ~= ob then return oa < ob end
+		return tostring(a.opts.label or a.name) < tostring(b.opts.label or b.name)
+	end)
+	return out
+end
+
+local function BuildHubMenu()
+	local m = CreateFrame("Frame", "SentinelUIHubMenu", UIParent, S.BackdropTemplate)
+	m:SetFrameStrata("TOOLTIP")
+	m:SetToplevel(true)
+	S:SetTemplate(m, "Default", "DIALOG")
+	m:SetClampedToScreen(true)
+	m.rows = {}
+	m:Hide()
+	local idle = 0
+	m:SetScript("OnUpdate", function(self, elapsed)
+		local btn = self.hubBtn
+		if self:IsMouseOver() or (btn and btn:IsMouseOver()) then idle = 0 return end
+		idle = idle + elapsed
+		if idle > 0.45 then self:Hide() end
+	end)
+	m:SetScript("OnShow", function() idle = 0 end)
+	hubMenu = m
+	return m
+end
+
+local function ToggleHubMenu(name)
+	local h = S.minimapHubs[name]
+	if not (h and h.btn) then return end
+	local m = hubMenu or BuildHubMenu()
+	if m:IsShown() and m.hub == name then m:Hide() return end
+	local list = HubEntries(h)
+	if #list == 0 then return end
+	local W, RH = 190, 22
+	for i, e in ipairs(list) do
+		local r = m.rows[i]
+		if not r then
+			r = CreateFrame("Button", nil, m)
+			r:SetHeight(RH)
+			r:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+			r.text = S:FontString(r, 11)
+			r.text:SetPoint("LEFT", 8, 0)
+			r.text:SetJustifyH("LEFT")
+			r.hl = r:CreateTexture(nil, "HIGHLIGHT")
+			r.hl:SetAllPoints()
+			r.hl:SetColorTexture(S.accent.r, S.accent.g, S.accent.b, 0.18)
+			r:SetScript("OnClick", function(self, button)
+				m:Hide()
+				local o = self.entry and self.entry.opts
+				if not o then return end
+				local fn = (button == "RightButton" and (o.onRight or o.onLeft)) or o.onLeft
+				if fn then S:SafeCall("MinimapHub:" .. (o.name or ""), fn) end
+			end)
+			r:SetScript("OnEnter", function(self)
+				local o = self.entry and self.entry.opts
+				if not (o and o.tooltip) then return end
+				GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+				S:SafeCall("MinimapHubTip:" .. (o.name or ""), o.tooltip, self)
+				GameTooltip:Show()
+			end)
+			r:SetScript("OnLeave", function() GameTooltip:Hide() end)
+			m.rows[i] = r
+		end
+		r.entry = e
+		r.text:SetText(e.opts.label or e.name)
+		r:ClearAllPoints()
+		r:SetPoint("TOPLEFT", m, "TOPLEFT", 3, -3 - (i - 1) * RH)
+		r:SetPoint("TOPRIGHT", m, "TOPRIGHT", -3, -3 - (i - 1) * RH)
+		r:Show()
+	end
+	for i = #list + 1, #m.rows do m.rows[i]:Hide() end
+	m:SetSize(W, #list * RH + 6)
+	m.hub, m.hubBtn = name, h.btn
+	m:ClearAllPoints()
+	m:SetPoint("TOPRIGHT", h.btn, "BOTTOMRIGHT", 0, -3)
+	m:Show()
+end
+
+local function RefreshHub(name)
+	local h = S.minimapHubs[name]
+	if not h then return end
+	local n = #HubEntries(h)
+	if n > 0 and not h.btn then
+		local def = HUB_DEFS[name] or { glyph = "??", title = name }
+		local g = S.db.global
+		g.minimapHubs = g.minimapHubs or {}
+		g.minimapHubs[name] = g.minimapHubs[name] or {}
+		h.btn = S:CreateRimButton({
+			name = "hub_" .. name, glyph = def.glyph, angle = def.angle,
+			store = g.minimapHubs[name],
+			onLeft = function() ToggleHubMenu(name) end,
+			onRight = function() ToggleHubMenu(name) end,
+			tooltip = function()
+				GameTooltip:AddLine("SentinelUI " .. L[def.title], S.accent.r, S.accent.g, S.accent.b)
+				for _, e in ipairs(HubEntries(h)) do GameTooltip:AddLine(e.opts.label or e.name, 1, 1, 1) end
+				GameTooltip:AddLine(L["Click: open the menu"], 0.7, 0.7, 0.7)
+			end,
+		})
+	end
+	if h.btn then
+		h.btn:SetShown(n > 0)
+		if n > 0 then h.btn:UpdatePosition() end
+	end
+end
+
+-- minimap button factory for modules; `hub` routes it into a shared button
+function S:CreateMinimapButton(opts)
+	if not opts.hub then return self:CreateRimButton(opts) end
+	local h = self.minimapHubs[opts.hub]
+	if not h then
+		h = { entries = {}, byName = {} }
+		self.minimapHubs[opts.hub] = h
+	end
+	local e = h.byName[opts.name]
+	if not e then
+		e = { name = opts.name }
+		h.byName[opts.name] = e
+		h.entries[#h.entries + 1] = e
+		-- stands in for the button the module expects: show/hide control the
+		-- hub entry, everything else is a harmless no-op
+		e.proxy = setmetatable({}, { __index = function(_, k)
+			if k == "SetShown" then return function(_, v) e.hidden = not v RefreshHub(opts.hub) end end
+			if k == "Show" then return function() e.hidden = false RefreshHub(opts.hub) end end
+			if k == "Hide" then return function() e.hidden = true RefreshHub(opts.hub) end end
+			if k == "IsShown" then return function() return not e.hidden end end
+			if k == "GetParent" then return function() return nil end end
+			return function() end
+		end })
+	end
+	e.opts = opts
+	RefreshHub(opts.hub)
+	return e.proxy
+end
+
 -- Hamburger button (top-right corner): opens the classic main menu as a dropdown.
 local menuEntries = {
 	{ L["Character"], function() if ToggleCharacter then ToggleCharacter("PaperDollFrame") end end },
@@ -375,7 +533,7 @@ function MM:CreateMenuButton()
 		{ L["Toggle Movers"], nil, nil, function() S:ToggleMovers() end },
 		{ L["Guild Hub"], "GuildHub", "Toggle" },
 		{ L["Instance Tracker"], "InstanceTracker", "Toggle" },
-		{ L["Instance Resets"], "RaidReset", "Toggle" },
+		{ L["Instance Resets"], "InstanceTracker", nil, function(m) if m.RaidReset then m.RaidReset:Toggle() end end },
 		{ L["Reputation"], "Reputation", "Toggle" },
 		{ "SeeLast", "SeeLast", "Toggle" },
 		{ "BugFolder", "BugFolder", "OpenSack" },

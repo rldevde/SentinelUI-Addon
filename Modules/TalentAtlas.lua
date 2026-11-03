@@ -273,11 +273,21 @@ local PAGES = {
 	{ "overview", "Overview" }, { "classes", "Classes" }, { "races", "Races" },
 	{ "caps", "Stat Caps" }, { "trees", "Talent Trees" }, { "talents", "My Talents" }, { "guides", "Guides" },
 }
+-- pages whose data was written for TBC; hidden on other clients
+local TBC_ONLY = { caps = true, trees = true, guides = true }
+local function VisiblePages()
+	local out = {}
+	for _, p in ipairs(PAGES) do
+		if TD.verified or not TBC_ONLY[p[1]] then out[#out + 1] = p end
+	end
+	return out
+end
 local ROLE_LABEL = { TANK = "Tank", HEALER = "Healer", DPS = "DPS" }
 local ROLE_COLOR = { TANK = { 0.40, 0.62, 1.0 }, HEALER = { 0.35, 0.85, 0.45 }, DPS = { 1.0, 0.48, 0.36 } }
 local FACTION_COLOR = { Alliance = { 0.45, 0.62, 1.0 }, Horde = { 1.0, 0.38, 0.33 }, Both = { 0.82, 0.82, 0.86 } }
 local ICON_SHEET = "Interface\\GLUES\\CHARACTERCREATE\\UI-CHARACTERCREATE-CLASSES"
-local TBC_CLASSES = { "DRUID", "HUNTER", "MAGE", "PALADIN", "PRIEST", "ROGUE", "SHAMAN", "WARLOCK", "WARRIOR" }
+local function TBC_CLASSES() return TD.ClassList() end
+local TBC_CLASS_SET = setmetatable({}, { __index = function(_, k) for _, f in ipairs(TD.ClassList()) do if f == k then return true end end end })
 
 local WIN_W, WIN_H, SIDE_W = 980, 640, 160
 local CONTENT_W = 744
@@ -357,11 +367,11 @@ local function ClassRoles(file)
 end
 
 local function ClassIndex(file)
-	for i, f in ipairs(TBC_CLASSES) do if f == file then return i end end
+	for i, f in ipairs(TBC_CLASSES()) do if f == file then return i end end
 end
 
 -- BisGuide hooks ------------------------------------------------------------
-local function BG() local m = S:GetModule("BisGuide") return m and m.initialized and m or nil end
+local function BG() local m = S:GetModule("TalentAtlas") local b = m and m.BisGuide return b and b.initialized and b or nil end
 
 local function OpenBis(file, specName)
 	local bg, ci = BG(), ClassIndex(file)
@@ -606,7 +616,7 @@ local function ClassDetail(ctx, file)
 	local c = TD.classes[file]
 	ctx.title = ClassName(file)
 	ctx:Back(function() selClass = nil Render(true) end)
-	if ClassIndex(file) then
+	if TD.verified and ClassIndex(file) then
 		local tb = MakeButton(ctx.p, L["Talent Trees"], 120, 20, function() treeClass, treeMode, page = file, "all", "trees" Render() end)
 		tb:SetPoint("TOPLEFT", 104, -(ctx.y - 30))
 	end
@@ -664,7 +674,7 @@ local function ClassDetail(ctx, file)
 
 	ctx:Header(L["Playable races"])
 	local names = {}
-	for _, r in ipairs(TD.races) do
+	for _, r in ipairs(TD.RaceList()) do
 		if r.classes then
 			for _, cf in ipairs(r.classes) do
 				if cf == file then names[#names + 1] = Hex(FACTION_COLOR[r.faction] or TEXT) .. L[r.name] .. "|r" end
@@ -743,7 +753,7 @@ local function RaceList(ctx)
 	local expansion = GetClientInfo()
 	local q = searchText:lower()
 	local shown = 0
-	for _, race in ipairs(TD.races) do
+	for _, race in ipairs(TD.RaceList()) do
 		local classesText = ""
 		if race.classes then
 			local t = {}
@@ -848,6 +858,10 @@ local function OverviewPage(ctx)
 	local cl = AddLabel(card, format("%s  %s  (%s)", L[client] or client, L["Version"] .. " " .. interface, L[TD.expansions[expansion] or ""]), 10, MUTED)
 	cl:SetPoint("BOTTOMLEFT", icon, "BOTTOMRIGHT", 12, 0)
 	ctx.y = ctx.y + 78
+	if not TD.verified then
+		ctx:Text(L["Class and race details describe The Burning Crusade and can differ on your client. Your own talents are read live."], 10, MUTED)
+		ctx.y = ctx.y + 8
+	end
 
 	local c = TD.classes[file]
 	if c and c.specs then
@@ -868,20 +882,34 @@ local function OverviewPage(ctx)
 	end
 
 	ctx:Header(L["Quick access"])
-	local x = 0
+	local x, rows = 0, 1
+	local maxX = (ctx.p.GetWidth and ctx.p:GetWidth() or 780) - 12
 	local function Quick(text, w, fn)
+		if x > 0 and x + w > maxX then
+			x, rows = 0, rows + 1
+			ctx.y = ctx.y + 32
+		end
 		local b = MakeButton(ctx.p, text, w, 24, fn)
 		b:SetPoint("TOPLEFT", x, -ctx.y)
 		x = x + w + 8
 	end
 	Quick(L["Your class guide"], 130, function() selClass = file page = "classes" Render() end)
-	Quick(L["Stat Caps"], 100, function() page = "caps" Render() end)
-	Quick(L["Talent Trees"], 110, function() treeClass, treeMode, page = file, "all", "trees" Render() end)
-	Quick(L["BiS Guide"], 100, function() OpenBis(file) end)
-	Quick(L["Consumables"], 110, function() OpenWindow("consumes") end)
-	Quick(L["Rotation"], 100, function() OpenWindow("rotation") end)
-	Quick(L["Talent builds"], 120, function() OpenWindow("talents") end)
-	ctx.y = ctx.y + 36
+	if TD.verified then
+		Quick(L["Stat Caps"], 100, function() page = "caps" Render() end)
+		Quick(L["Talent Trees"], 110, function() treeClass, treeMode, page = file, "all", "trees" Render() end)
+	end
+	local pool = TA.BisPool and TA.BisPool:Available()
+	if TD.bisClient or pool then
+		Quick(L["BiS Guide"], 100, function()
+			if TD.bisClient then OpenBis(file) else TA.BisPool:Open(file) end
+		end)
+	end
+	if TD.bisClient then
+		Quick(L["Consumables"], 110, function() OpenWindow("consumes") end)
+		Quick(L["Rotation"], 100, function() OpenWindow("rotation") end)
+		Quick(L["Talent builds"], 120, function() OpenWindow("talents") end)
+	end
+	ctx.y = ctx.y + 32 * rows + 4
 	ctx:Text(L["Select a class or race to explore its guide."], 10, MUTED)
 end
 
@@ -1223,7 +1251,7 @@ local function TreesPage(ctx)
 
 	ctx:Header(L["Class"])
 	local x = 0
-	for _, f in ipairs(TBC_CLASSES) do
+	for _, f in ipairs(TBC_CLASSES()) do
 		local chosenClass = f
 		local b = MakeButton(ctx.p, ClassName(chosenClass), 78, 22, function() treeClass, treeMode, treeFocus, treeSig = chosenClass, "calc", nil, nil Render(true) end)
 		b.label:SetTextColor(unpack(ClassColor(f)))
@@ -1292,7 +1320,7 @@ local function GuidesPage(ctx)
 	if not TD.classes[guideClass] or not TD.classes[guideClass].specs then guideClass = "WARRIOR" end
 	ctx:Header(L["Class"])
 	local x = 0
-	for _, file in ipairs(TBC_CLASSES) do
+	for _, file in ipairs(TBC_CLASSES()) do
 		local chosenClass = file
 		local b = MakeButton(ctx.p, ClassName(chosenClass), 78, 22, function() guideClass = chosenClass guideSpec = nil Render(true) end)
 		b.label:SetTextColor(unpack(ClassColor(file)))
@@ -1463,7 +1491,7 @@ local function BuildWindow()
 	side:SetWidth(SIDE_W)
 	S:SetTemplate(side, "Default")
 	local y = 10
-	for _, p in ipairs(PAGES) do
+	for _, p in ipairs(VisiblePages()) do
 		local key = p[1]
 		local b = CreateFrame("Button", nil, side)
 		b:SetPoint("TOPLEFT", 8, -y)
@@ -1557,7 +1585,7 @@ function TA:Open(key, arg, mode)
 		if key == "trees" then treeClass, treeMode, treeFocus, treeSig = arg, mode or "calc", nil, nil end
 		if key == "races" then
 			selRace = nil
-			for _, r in ipairs(TD.races) do if r.key == arg then selRace = r end end
+			for _, r in ipairs(TD.RaceList()) do if r.key == arg then selRace = r end end
 		end
 	end
 	if mainFrame:IsShown() then Render() else mainFrame:Show() end
@@ -1577,6 +1605,7 @@ function TA:Initialize()
 	self.db.minimap = self.db.minimap or { hide = false }
 	self.minimapBtn = S:CreateMinimapButton({
 		name = "talentatlas",
+		hub = "character", label = S.L["Talent Atlas"], order = 1,
 		glyph = "TA",
 		angle = 250,
 		store = self.db.minimap,
@@ -1593,4 +1622,19 @@ function TA:Initialize()
 		pcall(bb.GrabButton, bb, self.minimapBtn, "SentinelUIMinimapButton_talentatlas")
 	end
 	self.minimapBtn:SetShown(not self.db.minimap.hide)
+
+	-- BiS pools for the clients without the built-in TBC database
+	if self.BisPool and self.BisPool.Initialize then
+		S:SafeCall("TalentAtlas:BisPool", self.BisPool.Initialize, self.BisPool)
+	end
+	-- the BiS guide ships inside this module now
+	if self.BisGuide and self.BisGuide.Initialize then
+		S:SafeCall("TalentAtlas:BisGuide", self.BisGuide.Initialize, self.BisGuide)
+	end
+end
+
+function TA:Update()
+	if self.BisGuide and self.BisGuide.Update then
+		S:SafeCall("TalentAtlas:BisGuideUpdate", self.BisGuide.Update, self.BisGuide)
+	end
 end
