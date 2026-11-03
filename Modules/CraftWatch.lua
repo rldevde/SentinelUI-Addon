@@ -53,7 +53,36 @@ local function Profit(i)
 		local lo, hi = GetTradeSkillNumMade(i)
 		made = ((lo or 1) + (hi or lo or 1)) / 2
 	end
-	return sell * made - CraftCost(i)
+	local cost = CraftCost(i)
+	return sell * made - cost, cost
+end
+
+local function Store()
+	S.db.global.craftwatch = S.db.global.craftwatch or {}
+	local g = S.db.global.craftwatch
+	g.recipes = g.recipes or {}
+	g.ledger = g.ledger or {}
+	return g
+end
+
+local function RecordRecipes()
+	if not GetNumTradeSkills then return end
+	local prof = GetTradeSkillLine and GetTradeSkillLine() or "?"
+	local who = UnitName("player")
+	local rec = Store().recipes
+	for i = 1, GetNumTradeSkills() do
+		local name, stype = GetTradeSkillInfo(i)
+		if name and stype ~= "header" then
+			local id = ItemID(GetTradeSkillItemLink and GetTradeSkillItemLink(i))
+			if id then rec[id] = { name = name, prof = prof, who = who } end
+		end
+	end
+end
+
+local function LedgerAdd(itemID, name)
+	local g = Store()
+	g.ledger[#g.ledger + 1] = { id = itemID, name = name, t = time() }
+	while #g.ledger > 50 do table.remove(g.ledger, 1) end
 end
 
 local function MoneyShort(c)
@@ -66,6 +95,7 @@ end
 function CW:PaintRows()
 	local frame = _G.TradeSkillFrame
 	if not frame or not frame:IsShown() then return end
+	RecordRecipes()
 	-- TBC/classic recipe rows are named TradeSkillSkill1..N (index via GetID)
 	for i = 1, 20 do
 		local btn = _G["TradeSkillSkill" .. i]
@@ -81,15 +111,55 @@ function CW:PaintRows()
 			if idx then
 				local name, stype = GetTradeSkillInfo(idx)
 				if name and stype ~= "header" then
-					local p = S:SafeCall("CraftWatch:Profit", Profit, idx)
+					local p, cost = S:SafeCall("CraftWatch:Profit", Profit, idx)
 					if p then
-						btn.suiProfit:SetFormattedText("%s%s|r",
-							p >= 0 and "|cff33ff33+" or "|cffff3333", MoneyShort(p))
+						local m = (cost or 0) > 0 and format(" (%d%%)", math.floor(p / cost * 100 + 0.5)) or ""
+						btn.suiProfit:SetFormattedText("%s%s%s|r",
+							p >= 0 and "|cff33ff33+" or "|cffff3333", MoneyShort(p), m)
 					end
 				end
 			end
 		end
 	end
+end
+
+function CW:ShowBest()
+	local f = self.best
+	if not f then
+		f = CreateFrame("Frame", "SentinelUICraftWatchBest", UIParent, "BackdropTemplate")
+		f:SetSize(380, 420)
+		f:SetPoint("CENTER")
+		f:SetBackdrop({ bgFile = S.media.blank, edgeFile = S.media.blank, edgeSize = 2 })
+		f:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
+		f:SetBackdropBorderColor(0.72, 0.62, 0.28, 1)
+		f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
+		f:SetScript("OnDragStart", f.StartMoving) f:SetScript("OnDragStop", f.StopMovingOrSizing)
+		f:SetClampedToScreen(true)
+		local t = S:FontString(f, 13, "OUTLINE")
+		t:SetPoint("TOP", 0, -8) t:SetText(L["Best Crafts"])
+		local c = CreateFrame("Button", nil, f, "UIPanelCloseButton")
+		c:SetPoint("TOPRIGHT", -4, -4)
+		f.rows = {}
+		for i = 1, 18 do
+			local r = S:FontString(f, 11)
+			r:SetPoint("TOPLEFT", 12, -30 - (i - 1) * 21)
+			r:SetWidth(356) r:SetJustifyH("LEFT")
+			f.rows[i] = r
+		end
+		self.best = f
+	end
+	local list = {}
+	for id, r in pairs(Store().recipes) do
+		local sell = Price(id)
+		if sell then list[#list + 1] = { name = r.name, prof = r.prof, who = r.who, p = sell } end
+	end
+	table.sort(list, function(a, b) return a.p > b.p end)
+	for i = 1, 18 do
+		local e = list[i]
+		f.rows[i]:SetFormattedText(e and "|cffcccccc%s|r |cff888888(%s, %s)|r  |cff33ff33+%s|r"
+			or "", e and e.name or "", e and e.prof or "", e and e.who or "", e and MoneyShort(e.p) or "")
+	end
+	f:Show()
 end
 
 function CW:Initialize()
@@ -102,7 +172,16 @@ function CW:Initialize()
 	self:RegisterEvent("TRADE_SKILL_SHOW", function() C_Timer.After(0.2, function() CW:PaintRows() end) end)
 	self:RegisterEvent("TRADE_SKILL_UPDATE", function() C_Timer.After(0.2, function() CW:PaintRows() end) end)
 	SLASH_SUICW1 = "/suicraft"
-	SlashCmdList.SUICW = function() CW:PaintRows() end
+	SlashCmdList.SUICW = function(msg)
+		if (msg or ""):match("best") then CW:ShowBest() else CW:PaintRows() end
+	end
+	CW:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, _, spellID)
+		if unit ~= "player" or not spellID then return end
+		local nm = GetSpellInfo and GetSpellInfo(spellID)
+		for id, r in pairs(Store().recipes) do
+			if r.name == nm then LedgerAdd(id, nm) break end
+		end
+	end)
 	self.minimapBtn = S:CreateMinimapButton({
 		name = "craftwatch", glyph = "CW",
 		hub = "character", label = S.L["Craft Watch"], order = 6,

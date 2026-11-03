@@ -68,30 +68,40 @@ function PH:RecordPrice(e, per, now, id)
 	while #e.hist > 40 do tremove(e.hist, 1) end
 end
 
+-- process the list in small slices over several ticks: a full list can be
+-- tens of thousands of auctions and reading it in one frame froze the PC
+local SLICE = 400
 function PH:Scan()
 	if not self.db.enable or not GetNumAuctionItems then return end
 	local n = GetNumAuctionItems("list")
 	if not n or n == 0 then return end
+	if self.scanTicker then self.scanTicker:Cancel() end
 	local store, now = Store(), time()
-	for i = 1, n do
-		local name, _, count, _, _, _, _, _, _, buyout = GetAuctionItemInfo("list", i)
-		local link = GetAuctionItemLink and GetAuctionItemLink("list", i)
-		local id = link and ItemID(link)
-		if id and buyout and buyout > 0 and count and count > 0 then
-			local per = floor(buyout / count)
-			local e = store[id]
-			if not e then
-				e = { min = per, avg = per, n = 0, t = now }
-				store[id] = e
-			else
-				e.min = math.min(e.min or per, per)
-				e.avg = floor(((e.avg or per) * (e.n or 1) + per) / ((e.n or 1) + 1))
-				e.n = (e.n or 1) + 1
-				e.t = now
+	local i = 0
+	self.scanTicker = C_Timer.NewTicker(0, function()
+		local hi = math.min(i + SLICE, n)
+		for j = i + 1, hi do
+			local _, _, count, _, _, _, _, _, _, buyout = GetAuctionItemInfo("list", j)
+			local link = GetAuctionItemLink and GetAuctionItemLink("list", j)
+			local id = link and ItemID(link)
+			if id and buyout and buyout > 0 and count and count > 0 then
+				local per = floor(buyout / count)
+				local e = store[id]
+				if not e then
+					e = { min = per, avg = per, n = 0, t = now }
+					store[id] = e
+				else
+					e.min = math.min(e.min or per, per)
+					e.avg = floor(((e.avg or per) * (e.n or 1) + per) / ((e.n or 1) + 1))
+					e.n = (e.n or 1) + 1
+					e.t = now
+				end
+				S:SafeCall("PriceHistory:Rec", PH.RecordPrice, PH, e, per, now, id)
 			end
-			PH:RecordPrice(e, per, now, id)
 		end
-	end
+		i = hi
+		if i >= n then self.scanTicker:Cancel() self.scanTicker = nil end
+	end)
 end
 
 -- freshest price: the AH module's getAll scan DB (per realm+faction)
