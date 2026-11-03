@@ -101,6 +101,7 @@ Modules\InterruptAlert.lua
 Modules\HealerProtection.lua
 Modules\Blessings.lua
 Modules\Flare.lua
+Modules\CraftWatch.lua
 Modules\RaidCheck.lua
 Modules\RaidGrid.lua
 Modules\MageBar.lua

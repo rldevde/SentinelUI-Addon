@@ -700,6 +700,7 @@ S.defaults = {
 		disenchant = {
 			enable = true,
 		},
+		craftwatch = { enable = true },
 		craftqueue = {
 			showButton = false, showCost = true,
 		},
