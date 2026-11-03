@@ -49,9 +49,10 @@ local function OnEnter(btn)
 end
 
 function A:UpdateAura(btn, index)
-	local header = btn.header
-	local unit = header:GetAttribute("unit") or "player"
 	if not btn.icon then return end -- spawned in combat, init deferred to regen
+	local header = btn.header
+	if not header then return end -- uninitialized combat-spawned button
+	local unit = header:GetAttribute("unit") or "player"
 	local aura = S.GetAura(unit, index, btn.filter)
 	if not aura then
 		-- assigned slot but the aura is gone: hide the whole button so no
