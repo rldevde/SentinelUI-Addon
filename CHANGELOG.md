@@ -7,15 +7,26 @@ Note on versions: `## Version` is SentinelUI's own release number. The embedded
 BetterItem module reports `## X-BetterItem-Version` and must always equal the
 standalone RLBetterItem release.
 
+## [1.5.3] - 2026-11-03
+
+### Changed
+- **TalentAtlas follows your client**: the client is read from the interface version (Era, TBC, Wrath, Cata, Mists, Retail and the Forever client) and only the classes and races that exist there are listed (Era 9 classes / 8 races, TBC 9 / 10, Wrath adds Death Knight, Cata Worgen and Goblin, Mists Monk and Pandaren, Legion Demon Hunter and the allied races, Dragonflight Evoker and Dracthyr, then Earthen and Haranir). Death Knight, Monk, Demon Hunter and Evoker now have their specs with role and main stat. Stat caps, talent tree calculator, BiS guide, consumables, rotation and talent builds were written for The Burning Crusade, so they are only offered on TBC/Era (BiS on TBC only); other clients get the class and race pages, a notice and the live 'My Talents' page
+- **BiS guide for every client**: Era, Season of Discovery, Wrath, Cata, Mists, Retail and the Forever client now have BiS item lists per class, spec and phase/category (Era and SoD phases, Wrath P4, Cata P4 with pre-BiS, Mists P5, Retail overall/raid/Mythic+/trinkets), a browser window grouped by slot (`/suibis` or the TalentAtlas BiS button) and BiS lines in item tooltips. The data is generated into compact per-client pool files (`gen_bis_pools.py`, own format, about 220 KB in total) and each client only keeps its own pool; slots missing in the data are read from the client's item data. TBC keeps its richer built-in database (enchants, gems, drop chances)
+- **Far fewer minimap buttons - related tools share one hub button**: instead of 22 separate rim buttons there are now four hubs plus Messenger and BugFolder. *Dungeons & Raids* (`IN`): Instance Tracker, Instance Resets, War Logs, Loot Browser, Group Finder. *Raid Tools* (`RT`): Heal Grid, Raid Check, Boss Watch, Decurse, Blessings, Healer Protection. *Character & Guides* (`CH`): Talent Atlas, BetterItem, Profession Cooldowns, Reputation, Alt Roster. *Guild & Chat* (`SO`): Guild Chronicle, Announcer, SeeLast. A hub opens a menu (left click = open, right click = options); class-bound entries only show for their classes and a hub with no visible entry hides itself. Modules opt in with `hub = ...` in `S:CreateMinimapButton`
+- **Instance Tracker, Instance Resets and War Logs are one module now**: one entry and one enable flag (`Instance Tracker`); the resets and the raid logs keep their own settings and slash commands (`/resets`, `/suilog`) and start and update with the tracker
+
+### Fixed
+- **TalentAtlas showed no classes and lost its pages**: the client detection passed the extra `GetBuildInfo` values as a number base to `tonumber`, so the data file aborted on load; the interface version is now read with a single value
+- **Heal Grid click-cast setup aborted on a client without shapeshift data**: the rez macro's form scan now tolerates a missing form count
+- **Mover mode: small movers under a big overlay could not be dragged**: all movers shared one frame level, so a large frame swallowed the clicks. Movers are now restacked by size so the smallest always lies on top
+- **TalentAtlas quick access buttons were cut off**: the row of seven buttons was wider than the window; it now wraps into a second line
+- **Instance Tracker could abort its start on clients without saved-instance data**: the lockout loop now tolerates a missing count
+
 ## [1.5.2] - 2026-11-02
 
 ### Changed
 - **Minimap menu hides what your class cannot use**: Blessings (Paladin), Totem Forge (Shaman), Healer Protection (healer classes) and Decurse (dispel classes) only appear for those classes
 - **Heal Grid is now the standalone HealGrid addon's code (v1.1.3)**: the built-in RaidGrid module was replaced by the same grid, options window (tabs, colors, test mode, cast highlight/castbar, macro pad, profiles, export/import) and click-cast system as the external addon; only the integration differs (settings live in the SentinelUI profile, German strings in `deDE_HealGrid.lua`, `/suirg`, `/suiheal`, `/suihg` plus `/healgrid` and `/hg` when the standalone addon is not loaded). Dropped with it: the old built-in HoT icons and missing-buff watch, which HealGrid does not have. An untouched two-binding click-cast list is expanded to the full button x modifier matrix
-- **TalentAtlas follows your client**: the client is read from the interface version (Era, TBC, Wrath, Cata, Mists, Retail and the Forever client) and only the classes and races that exist there are listed (Era 9 classes / 8 races, TBC 9 / 10, Wrath adds Death Knight, Cata Worgen and Goblin, Mists Monk and Pandaren, Legion Demon Hunter and the allied races, Dragonflight Evoker and Dracthyr, then Earthen and Haranir). Death Knight, Monk, Demon Hunter and Evoker now have their specs with role and main stat. Stat caps, talent tree calculator, BiS guide, consumables, rotation and talent builds were written for The Burning Crusade, so they are only offered on TBC/Era (BiS on TBC only); other clients get the class and race pages, a notice and the live 'My Talents' page
-- **BiS guide for every client**: Era, Season of Discovery, Wrath, Cata, Mists, Retail and the Forever client now have BiS item lists per class, spec and phase/category (Era and SoD phases, Wrath P4, Cata P4 with pre-BiS, Mists P5, Retail overall/raid/Mythic+/trinkets), a browser window grouped by slot (`/suibis` or the TalentAtlas BiS button) and BiS lines in item tooltips. The data is generated into compact per-client pool files (`gen_bis_pools.py`, own format, about 220 KB in total) and each client only keeps its own pool; slots missing in the data are read from the client's item data. TBC keeps its richer built-in database (enchants, gems, drop chances)
-- **Far fewer minimap buttons - related tools share one hub button**: instead of 22 separate rim buttons there are now four hubs plus Messenger and BugFolder. *Dungeons & Raids* (`IN`): Instance Tracker, Instance Resets, War Logs, Loot Browser, Group Finder. *Raid Tools* (`RT`): Heal Grid, Raid Check, Boss Watch, Decurse, Blessings, Healer Protection. *Character & Guides* (`CH`): Talent Atlas, BetterItem, Profession Cooldowns, Reputation, Alt Roster. *Guild & Chat* (`SO`): Guild Chronicle, Announcer, SeeLast. A hub opens a menu (left click = open, right click = options); class-bound entries only show for their classes and a hub with no visible entry hides itself. Modules opt in with `hub = ...` in `S:CreateMinimapButton`
-- **Instance Tracker, Instance Resets and War Logs are one module now**: one entry and one enable flag (`Instance Tracker`); the resets and the raid logs keep their own settings and slash commands (`/resets`, `/suilog`) and start and update with the tracker
 
 ### Fixed
 - **World Buffs minimap tooltip crashed on mixed layer keys**: old sessions stored numeric layer ids, new ones are strings; sorting and comparing them raised 'attempt to compare number with string'. Both sorts in WorldBuffs now normalize the keys
@@ -25,10 +36,6 @@ standalone RLBetterItem release.
 - **Blessings and Heal Grid windows threw ADDON_ACTION_BLOCKED when dragged in combat**: they contain secure buttons, so `StartMoving` is now skipped during combat lockdown
 - **Mail datatext**: the bar and tooltip show the sender names (inbox when known, otherwise `GetLatestThreeSenders`) like the stock minimap mail icon, and an unverified pending flag no longer claims a count
 - **Waypoints**: `GetWorldPosFromMapPos` returns the instance id first, which was read as the position vector (an error every second); the arrow direction now calibrates the map axes, the corpse timer no longer indexes a function, minimap pins use the player position correctly, the arrow has no background, and the creation of the arrow frame no longer aborts the module (Questie's TomTom button now reaches the API facade)
-
-- **Mover mode: small movers under a big overlay could not be dragged**: all movers shared one frame level, so a large frame swallowed the clicks. Movers are now restacked by size so the smallest always lies on top
-- **TalentAtlas quick access buttons were cut off**: the row of seven buttons was wider than the window; it now wraps into a second line
-- **Instance Tracker could abort its start on clients without saved-instance data**: the lockout loop now tolerates a missing count
 
 ## [1.5.1] - 2026-11-01
 
@@ -127,7 +134,6 @@ standalone RLBetterItem release.
 - **GuildHub window rebuilt**: dark header band with accent rule, slim custom close, sidebar as its own inset panel with hover/active accent bar, content as inset panel, version tag, resizable — modern flat SentinelUI look
 - **GuildHub** (`/sgh` or `/sguild`, minimap button): guild suite in one window — grouped sidebar (Guild / Raids / PvP / Rules / Admin / Settings) with Guild Roster (roles Tank/Healer/DPS, filters, sort, mains/alts via mutual linking, right-click whisper/invite/set-role), My Characters (profs + attunements), Professions directory + craft requests, Guild Bank remote view (shared snapshots), Layers (who's on which layer + hop), Group Finder and BG Finder (live, nothing stored), Raid Signups (create/sign/lineup/alerts), Attendance (auto + leader corrections), Loot History (recorded by the master looter), Raid Groups + Raid Builder, Bounties (post/claim/approve), Excommunication + private blacklist (hides chat and declines invites), Guild Manager (per-rank rights, GM only), Settings, a draggable Call to Arms button, and raid alerts — all synced between guildmates' addons over the guild channel, validated against the roster; GuildChronicle was removed — GuildHub now keeps its own roster snapshot (live roster persisted for offline members) and broadcasts each character's professions itself
 
-
 - **AuctionHouse**: staged category/page scan (no freeze), external realm price feed (`SentinelAHData`, merged on login and AH open)
 - **WildBuffs**: out-of-range / dead / offline targets are skipped and re-buffed once back in range; live scan in combat; pulsing `!` when the own party's buff has <10s left (party only, never raid)
 - **GuildChronicle**: clickable member picker and "Mark as main" for the guild master; profession re-request on roster changes
@@ -206,7 +212,6 @@ standalone RLBetterItem release.
 - **WildBuffs**: no refresh in combat (secure children forbid Show/SetPoint), `ADDON_ACTION_BLOCKED` gone; per-raid-group rows, persisted drag position, rotating single-buff targets, per-buff icons
 - **Navigation**: quest log right-click no longer spams and headers collapse again
 - **Castbar**: also hidden when a stale duration-object path left the bar drawn
-
 
 - Castbars no longer stay visible as empty black bars when the cast-end event is lost
 - WildBuffs click reliability, group scanning, timers, per-buff icons
