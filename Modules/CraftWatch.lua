@@ -129,9 +129,8 @@ function CW:ShowBest()
 		f = CreateFrame("Frame", "SentinelUICraftWatchBest", UIParent, "BackdropTemplate")
 		f:SetSize(380, 420)
 		f:SetPoint("CENTER")
-		f:SetBackdrop({ bgFile = S.media.blank, edgeFile = S.media.blank, edgeSize = 2 })
+		S:CreateBackdrop(f, "Default")
 		f:SetBackdropColor(0.05, 0.05, 0.08, 0.95)
-		f:SetBackdropBorderColor(0.72, 0.62, 0.28, 1)
 		f:SetMovable(true) f:EnableMouse(true) f:RegisterForDrag("LeftButton")
 		f:SetScript("OnDragStart", f.StartMoving) f:SetScript("OnDragStop", f.StopMovingOrSizing)
 		f:SetClampedToScreen(true)
@@ -177,7 +176,9 @@ function CW:Initialize()
 	end
 	CW:RegisterEvent("UNIT_SPELLCAST_SUCCEEDED", function(_, unit, _, _, spellID)
 		if unit ~= "player" or not spellID then return end
-		local nm = GetSpellInfo and GetSpellInfo(spellID)
+		local nm = S.GetSpellInfo and S.GetSpellInfo(spellID)
+		if type(nm) == "table" then nm = nm.name end
+		if type(nm) ~= "string" then return end
 		for id, r in pairs(Store().recipes) do
 			if r.name == nm then LedgerAdd(id, nm) break end
 		end
@@ -185,7 +186,8 @@ function CW:Initialize()
 	self.minimapBtn = S:CreateMinimapButton({
 		name = "craftwatch", glyph = "CW",
 		hub = "character", label = S.L["Craft Watch"], order = 6,
-		onLeft = function() CW:PaintRows() end,
+		onLeft = function() CW:ShowBest() end,
+		onRight = function() S:ToggleConfig("craftwatch") end,
 		tooltip = function()
 			GameTooltip:AddLine("SentinelUI " .. L["Craft Watch"])
 			GameTooltip:AddLine(L["Shows profit or loss on every recipe in the profession window."], 1, 1, 1)
