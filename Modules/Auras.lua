@@ -238,6 +238,12 @@ function A:CreateHeader(kind)
 	S:CreateMover(holder, kind, kind == "buffs" and L["Player Buffs"] or L["Player Debuffs"], pos, "auras")
 	self:ConfigureHeader(header)
 	header:Show()
+	-- own event processing off: its update path calls ClearAllPoints on the
+	-- protected children and would error whenever it runs under a tainted or
+	-- insecure call (this client does not exempt addon-created headers)
+	pcall(header.UnregisterAllEvents, header)
+	header:SetScript("OnEvent", nil)
+	header:SetScript("OnUpdate", nil)
 	-- the template keeps its own secure update: it can spawn and lay out
 	-- aura buttons even in combat, which is exactly what it was built for.
 	-- The old ADDON_ACTION_BLOCKED came from our insecure attribute hooks in
@@ -372,6 +378,7 @@ end
 -- addon code); the template's own OnAttributeChanged calls it internally when
 -- "unit" changes -> re-set it to re-enter the full spawn/layout path.
 function A:RefreshHeaders(unit)
+	if InCombatLockdown() then return self:CombatRefresh() end
 	if unit and unit ~= "player" then return end
 	for _, header in pairs({ self.buffs, self.debuffs }) do
 		if InCombatLockdown() then
