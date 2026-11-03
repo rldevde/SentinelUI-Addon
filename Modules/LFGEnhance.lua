@@ -200,7 +200,8 @@ local function AddDelistButton(parent)
 	if not parent or parent.suiDelist then return end
 	local btn = CreateFrame("Button", "SentinelUILFGDelist", parent)
 	btn:SetSize(90, 20)
-	btn:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", 8, 6)
+	-- top-right, out of the way of the bottom action/tab row
+	btn:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -30, -30)
 	if S.SkinButton then S:SkinButton(btn) else S:SetTemplate(btn, "Default") end
 	local fs = S:FontString(btn, 11, "OUTLINE")
 	fs:SetAllPoints()
