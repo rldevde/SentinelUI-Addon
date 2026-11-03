@@ -28,15 +28,15 @@ local function BagScan()
 	for bag = 0, NUM_BAG_SLOTS or 4 do
 		local slots = GetContainerNumSlots and GetContainerNumSlots(bag) or 0
 		for slot = 1, slots do
-			local info, count, link
+			local info, count, link, bound
 			if C_Container and C_Container.GetContainerItemInfo then
 				local t = C_Container.GetContainerItemInfo(bag, slot)
-				if t then info = t.iconFileID count = t.stackCount link = t.hyperlink end
+				if t then info = t.iconFileID count = t.stackCount link = t.hyperlink bound = t.isBound end
 			elseif GetContainerItemInfo then
-				local tex, n, _, q, _, _, l = GetContainerItemInfo(bag, slot)
-				info, count, link = tex, n, l
+				local tex, n, _, q, _, _, l, _, _, _, b = GetContainerItemInfo(bag, slot)
+				info, count, link, bound = tex, n, l, b
 			end
-			if link then
+			if link and not bound then
 				local name, _, quality, _, _, _, _, _, _, _, sellPrice = GetItemInfo(link)
 				local id = AH:ItemID(link)
 				if name and id then
@@ -228,6 +228,14 @@ function sell:Build(pf)
 		r.cnt = S:FontString(r, 9, nil, S.media.numberFont)
 		r.cnt:SetPoint("RIGHT", -4, 0)
 		r:SetScript("OnClick", function() sell:Select(r) end)
+		r:SetScript("OnEnter", function()
+			if r.data and r.data.link then
+				GameTooltip:SetOwner(r, "ANCHOR_RIGHT")
+				GameTooltip:SetHyperlink(r.data.link)
+				GameTooltip:Show()
+			end
+		end)
+		r:SetScript("OnLeave", function() GameTooltip:Hide() end)
 		r:Hide()
 		left.rows[i] = r
 	end
