@@ -34,7 +34,6 @@ local skins = {
 	{ key = "auctionhouse", frames = { "AuctionHouseFrame" }, addon = "Blizzard_AuctionHouseUI" },
 	-- the group finder is left unskinned entirely: restyling this window broke
 	-- tab switching, the role check and group search on this client
-	{ key = "lfg", frames = { "PVEFrame" }, sub = { "LFDQueueFrame", "LFGListFrame", "RaidFinderFrame", "LFDParentFrameInset", "PVEFrameLeftInset" }, noChildren = true },
 	{ key = "lfg", frames = { "PVPUIFrame", "PVPFrame", "HonorFrame", "ConquestFrame" }, addon = "Blizzard_PVPUI" },
 	{ key = "macro", frames = { "MacroFrame", "MacroPopupFrame" }, addon = "Blizzard_MacroUI", sub = { "MacroFrameInset", "MacroButtonScrollFrame", "MacroFrameTextBackground", "MacroFrameSelectedMacroBackground" } },
 	{ key = "keybind", frames = { "KeyBindingFrame" }, addon = "Blizzard_BindingUI" },
