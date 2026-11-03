@@ -133,6 +133,17 @@ function S:InitAuraButton(btn)
 			btn2:SetAttribute("type2", "cancelaura")
 		end
 		WireSecure(btn)
+		-- like the reference implementation: when the header assigns this
+		-- button an aura index, the button fills itself right away instead of
+		-- waiting for our next refresh pass - works mid-combat too since the
+		-- header's own update just spawned it
+		btn:SetScript("OnAttributeChanged", function(self2, attr, value)
+			if attr == "index" and value then
+				S:SafeCall("Auras:BtnFill", A.UpdateAura, A, self2, value)
+			elseif attr == "target-slot" and value then
+				S:SafeCall("Auras:BtnFill", A.UpdateWeapon, A, self2, value)
+			end
+		end)
 		local db = A.db[btn.filter == "HARMFUL" and "debuffs" or "buffs"]
 		S:CreateBackdrop(btn, "Default")
 		btn.icon = btn:CreateTexture(nil, "ARTWORK")
