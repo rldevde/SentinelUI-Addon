@@ -53,14 +53,16 @@ function A:UpdateAura(btn, index)
 	local unit = header:GetAttribute("unit") or "player"
 	local aura = S.GetAura(unit, index, btn.filter)
 	if not aura then
-		-- assigned slot but the aura is gone: clear stale contents so the
-		-- button doesn't linger as an empty or outdated square
+		-- assigned slot but the aura is gone: hide the whole button so no
+		-- empty black square lingers (alpha, not Hide - combat safe)
+		btn:SetAlpha(0)
 		btn.icon:SetTexture(nil)
 		btn.count:SetText("")
 		btn.time:SetText("")
 		btn.cd:Hide()
 		return
 	end
+	btn:SetAlpha(1)
 	if IsSecret(aura.icon) then
 		-- combat-hidden icon on secretAPI clients: SetTexture rejects secret
 		-- values, so show a neutral question mark rather than a black square
