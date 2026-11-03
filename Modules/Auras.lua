@@ -51,6 +51,7 @@ end
 function A:UpdateAura(btn, index)
 	local header = btn.header
 	local unit = header:GetAttribute("unit") or "player"
+	if not btn.icon then return end -- spawned in combat, init deferred to regen
 	local aura = S.GetAura(unit, index, btn.filter)
 	if not aura then
 		-- assigned slot but the aura is gone: hide the whole button so no
@@ -118,6 +119,12 @@ end
 
 -- Called from the XML template OnLoad
 function S:InitAuraButton(btn)
+	if InCombatLockdown() then
+		-- combat-spawned buttons get the full init after regen: every call
+		-- here touches a protected frame and would taint it -> the header's
+		-- own ClearAllPoints then errors (ADDON_ACTION_BLOCKED)
+		return S:RunOutOfCombat(S.InitAuraButton, S, btn)
+	end
 	S:SafeCall("Auras:Init", function()
 		local header = btn:GetParent()
 		btn.header = header
